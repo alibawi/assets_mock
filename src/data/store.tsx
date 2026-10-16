@@ -1,9 +1,9 @@
-import { createContext, useCallback, useContext, useEffect, useState, type ReactNode } from 'react'
+import { createContext, useCallback, useContext, useEffect, useRef, useState, type ReactNode } from 'react'
 import { can as canRole, type Perm } from './permissions'
 import { seed } from './seed'
 import type { DB } from './types'
 
-const KEY = 'enki-assets-mock-v2'
+const KEY = 'enki-assets-mock-v3'
 
 interface Ctx {
   db: DB
@@ -28,6 +28,8 @@ function load(): DB {
 
 export function StoreProvider({ children }: { children: ReactNode }) {
   const [db, setDb] = useState<DB>(load)
+  // Latest DB, so consecutive run() calls in one event build on each other.
+  const ref = useRef(db)
   const [toastMsg, setToast] = useState<{ msg: string; tone: 'ok' | 'err' } | null>(null)
 
   useEffect(() => {
@@ -45,20 +47,24 @@ export function StoreProvider({ children }: { children: ReactNode }) {
 
   const run = useCallback(
     (fn: (draft: DB) => string | null | void, ok?: string) => {
-      const next = structuredClone(db)
+      const next = structuredClone(ref.current)
       const err = fn(next)
       if (typeof err === 'string') {
         toast(err, 'err')
         return false
       }
+      ref.current = next
       setDb(next)
       if (ok) toast(ok)
       return true
     },
-    [db, toast],
+    [toast],
   )
 
-  const reset = useCallback(() => setDb(seed()), [])
+  const reset = useCallback(() => {
+    ref.current = seed()
+    setDb(ref.current)
+  }, [])
   const can = useCallback((p: Perm) => canRole(db.role, p), [db.role])
 
   return (
