@@ -1,14 +1,17 @@
 import { createContext, useCallback, useContext, useEffect, useState, type ReactNode } from 'react'
+import { can as canRole, type Perm } from './permissions'
 import { seed } from './seed'
 import type { DB } from './types'
 
-const KEY = 'enki-assets-mock-v1'
+const KEY = 'enki-assets-mock-v2'
 
 interface Ctx {
   db: DB
-  update: (fn: (draft: DB) => void) => void
+  /** Applies a mutation to a copy of the DB. If `fn` returns a string it is treated as an error and nothing is saved. */
+  run: (fn: (draft: DB) => string | null | void, ok?: string) => boolean
   reset: () => void
   toast: (msg: string, tone?: 'ok' | 'err') => void
+  can: (p: Perm) => boolean
 }
 
 const StoreCtx = createContext<Ctx | null>(null)
@@ -35,30 +38,34 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     }
   }, [db])
 
-  const update = useCallback((fn: (draft: DB) => void) => {
-    setDb((prev) => {
-      const next = structuredClone(prev)
-      fn(next)
-      return next
-    })
-  }, [])
-
   const toast = useCallback((msg: string, tone: 'ok' | 'err' = 'ok') => {
     setToast({ msg, tone })
-    window.setTimeout(() => setToast(null), 2600)
+    window.setTimeout(() => setToast(null), 3000)
   }, [])
 
+  const run = useCallback(
+    (fn: (draft: DB) => string | null | void, ok?: string) => {
+      const next = structuredClone(db)
+      const err = fn(next)
+      if (typeof err === 'string') {
+        toast(err, 'err')
+        return false
+      }
+      setDb(next)
+      if (ok) toast(ok)
+      return true
+    },
+    [db, toast],
+  )
+
   const reset = useCallback(() => setDb(seed()), [])
+  const can = useCallback((p: Perm) => canRole(db.role, p), [db.role])
 
   return (
-    <StoreCtx.Provider value={{ db, update, reset, toast }}>
+    <StoreCtx.Provider value={{ db, run, reset, toast, can }}>
       {children}
       {toastMsg && (
-        <div
-          className={`fixed bottom-5 left-5 z-50 rounded-md px-4 py-2.5 text-sm text-white shadow-lg ${
-            toastMsg.tone === 'ok' ? 'bg-navy' : 'bg-red-600'
-          }`}
-        >
+        <div className={`fixed bottom-5 left-5 z-50 max-w-md rounded-md px-4 py-2.5 text-sm text-white shadow-lg ${toastMsg.tone === 'ok' ? 'bg-navy' : 'bg-red-600'}`}>
           {toastMsg.msg}
         </div>
       )}
@@ -71,13 +78,3 @@ export function useStore() {
   if (!c) throw new Error('StoreProvider missing')
   return c
 }
-
-/** Next document number like PREFIX-2026-0003 based on existing docs. */
-export function nextNumber(prefix: string, existing: { number: string }[]) {
-  const n = existing.reduce((m, d) => Math.max(m, Number(d.number.split('-').pop()) || 0), 0) + 1
-  return `${prefix}-2026-${String(n).padStart(4, '0')}`
-}
-
-export const uid = () => Math.random().toString(36).slice(2, 9)
-
-export const historyEntry = (action: string, ref: string) => ({ date: '2026-10-16', action, ref, user: 'superadmin' })
