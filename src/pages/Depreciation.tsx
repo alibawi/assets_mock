@@ -7,7 +7,7 @@ import { JournalTable } from '../components/Shared'
 import { Badge, Card, Confirm, Dropdown, Empty, Field, FormGrid, ReadOnly, Select, Tabs } from '../components/ui'
 import { monthEnd, runJournal, runTotal, simulateRun } from '../data/calc'
 import { iqd, money, periodLabel, runStatusLabel, runStatusTone } from '../data/format'
-import { createRun, postRun, reversalOf, reverseRun, TODAY } from '../data/lifecycle'
+import { createRun, gapError, overlapError, postRun, reversalOf, reverseRun, TODAY } from '../data/lifecycle'
 import { useLookups } from '../data/lookups'
 import { useStore } from '../data/store'
 
@@ -58,7 +58,7 @@ export function RunForm() {
       let newId = ''
       const ok = run((d) => {
         const x = createRun(d, period, cls)
-        if (!x.lines.length) return 'لا توجد أقساط مستحقة لهذه الفترة والنطاق'
+        if (typeof x === 'string') return x
         newId = x.id
       }, 'تم إنشاء الدورة بحالة مسودة (محاكاة)')
       if (ok) nav(`/runs/${newId}`, { replace: true })
@@ -81,9 +81,15 @@ export function RunForm() {
             <Field label="أقساط مستحقة"><ReadOnly ltr>{preview.length}</ReadOnly></Field>
             <Field label="الفترة المحاسبية"><ReadOnly>مفتوحة</ReadOnly></Field>
           </FormGrid>
-          <p className="mt-3 text-xs text-gray-500">
-            المحاكاة تجمع الأقساط غير المُرحّلة حتى نهاية الفترة للأصول «قيد الإهلاك» فقط (الموقوفة مستثناة)، وتنشئ وثيقة مسودة يمكن مراجعتها قبل الترحيل. لا يُنشأ قيد ولا يُعلَّم أي قسط كمُرحّل.
-          </p>
+          {(overlapError(db, period, cls) || gapError(db, period, cls)) && (
+            <div className="mt-3 rounded-md border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-700">{overlapError(db, period, cls) ?? gapError(db, period, cls)}</div>
+          )}
+          <ul className="mt-3 list-inside list-disc space-y-0.5 text-xs text-gray-500">
+            <li>المحاكاة تجمع الأقساط غير المُرحّلة المؤرَّخة داخل الفترة للأصول «قيد الإهلاك» فقط (الموقوفة مستثناة)، وتنشئ مسودة للمراجعة؛ لا قيد ولا تعليم ترحيل.</li>
+            <li>لا تداخل: «كل الفئات» تتداخل مع أي فئة، ومسودة واحدة كحد أقصى لكل فترة ونطاق (§3.8.1).</li>
+            <li>لا فجوات: تُرحَّل الأشهر الأقدم أولاً.</li>
+            <li>كل سطر يأخذ مركز الكلفة الساري في تاريخه (§5.5).</li>
+          </ul>
         </Card>
       </div>
     )
@@ -122,7 +128,7 @@ export function RunForm() {
         }
       />
       {r.status === 'posted' && <div className="mb-3 rounded-md border border-emerald-200 bg-emerald-50 px-4 py-2.5 text-sm text-emerald-800">تم ترحيل الدورة بقيد واحد بتاريخ {r.postedAt}. التصحيح يتم بالعكس لا بالحذف.</div>}
-      {r.status === 'reversed' && <div className="mb-3 rounded-md border border-red-200 bg-red-50 px-4 py-2.5 text-sm text-red-700">تم عكس هذه الدورة بقيد عكسي، وأُعيدت أقساطها إلى «مخطَّط».</div>}
+      {r.status === 'reversed' && <div className="mb-3 rounded-md border border-red-200 bg-red-50 px-4 py-2.5 text-sm text-red-700">تم عكس هذه الدورة بقيد عكسي مؤرَّخ بنهاية فترتها ({r.reversedAt})، وأُعيدت أقساطها إلى «مخطَّط». يمكن إعادة تشغيل الفترة.</div>}
 
       <Card className="mb-4">
         <FormGrid>
@@ -165,11 +171,11 @@ export function RunForm() {
         )}
         {tab === 'journal' && (
           <div className="space-y-5 p-4">
-            <JournalTable lines={journal} note={draft ? 'معاينة القيد الواحد الذي سيُنشأ عند الترحيل — مُجمّع حسب (حساب المصروف، مركز الكلفة) مديناً وحسب حساب المجمّع دائناً.' : undefined} />
+            <JournalTable lines={journal} date={monthEnd(r.periodEnd)} note={draft ? 'معاينة القيد الواحد الذي سيُنشأ عند الترحيل — مُجمّع حسب (حساب المصروف، مركز الكلفة) مديناً وحسب حساب المجمّع دائناً.' : undefined} />
             {r.status === 'reversed' && (
               <div>
                 <h4 className="mb-2 text-sm font-semibold text-red-700">القيد العكسي (IsReversal)</h4>
-                <JournalTable lines={reversalOf(journal)} />
+                <JournalTable lines={reversalOf(journal)} date={r.reversedAt ?? undefined} note="مؤرَّخ بـ PeriodEnd للدورة الأصلية لا بتاريخ اليوم (§5.4)." />
               </div>
             )}
           </div>
@@ -181,7 +187,7 @@ export function RunForm() {
           onYes={() => run((d) => postRun(d, r.id, TODAY), 'تم ترحيل الدورة')} onClose={() => setAsk(null)} />
       )}
       {ask === 'reverse' && (
-        <Confirm danger title="عكس الدورة" text="سيُنشأ قيد عكسي وتعود الأقساط إلى «مخطَّط». هل تريد المتابعة؟" onYes={() => run((d) => reverseRun(d, r.id), 'تم عكس الدورة')} onClose={() => setAsk(null)} />
+        <Confirm danger title="عكس الدورة" text="سيُنشأ قيد عكسي مؤرَّخ بنهاية فترة الدورة وتعود الأقساط إلى «مخطَّط». يُرفض العكس إن وُجدت دورة لاحقة مُرحّلة (LIFO) أو أحداث تابعة لاحقة على أصولها. هل تريد المتابعة؟" onYes={() => run((d) => reverseRun(d, r.id), 'تم عكس الدورة')} onClose={() => setAsk(null)} />
       )}
       {ask === 'delete' && (
         <Confirm danger title="حذف المسودة" text="حذف المحاكاة لا يؤثر على الأصول." onYes={() => { if (run((d) => { d.runs = d.runs.filter((x) => x.id !== r.id) }, 'تم حذف المسودة')) nav('/runs') }} onClose={() => setAsk(null)} />
