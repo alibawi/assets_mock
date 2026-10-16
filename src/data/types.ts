@@ -1,4 +1,4 @@
-// Data model follows docs/source/assets-management-module-plan-ar.md §3.
+// Data model follows docs/source/assets-management-module-plan-ar.md §3 (revision 3).
 
 /** §3.1 DepreciationMethod */
 export type DepMethod = 'SL' | 'DB' | 'DBSL' | 'NONE'
@@ -6,36 +6,67 @@ export type DepMethod = 'SL' | 'DB' | 'DBSL' | 'NONE'
 export type Periodicity = 'M' | 'Q' | 'Y'
 /** §3.1 ProrataMethod */
 export type Prorata = 'NONE' | 'CONST' | 'DAYS'
-/** §3.5 / §4 Asset state */
-export type AssetState = 'draft' | 'running' | 'paused' | 'closed' | 'sold' | 'disposed'
+/** §3.1 / §5.6.5 AssetKind */
+export type AssetKind = 'tangible' | 'intangible' | 'land' | 'lowValue'
+/** §3.5 / §4.1 Asset state */
+export type AssetState = 'draft' | 'running' | 'paused' | 'closed' | 'sold' | 'disposed' | 'cancelled'
 /** §3.8 run status */
 export type RunStatus = 'draft' | 'posted' | 'reversed'
 /** §3.7 TransactionType */
-export type TxType = 'capitalization' | 'revaluation' | 'transfer' | 'pause' | 'resume' | 'sale' | 'disposal' | 'adjustment'
+export type TxType =
+  | 'capitalization' | 'capitalizationReversal' | 'openingBalance' | 'addition' | 'acquisitionReduction'
+  | 'manualDepreciation' | 'revaluation' | 'impairment' | 'transfer' | 'costCenterTransfer' | 'pause' | 'resume'
+  | 'sale' | 'saleReversal' | 'disposal' | 'disposalReversal' | 'adjustment' | 'cancellation'
 
 export type RoleId = 'superadmin' | 'viewer' | 'user' | 'accountant' | 'settings'
 
 export interface JournalLine { account: string; desc: string; debit: number; credit: number; costCenter?: string }
 
-/** §3.1 AssetClass — accounting template */
-export interface AssetClass {
-  id: string
-  code: string
-  name: string
-  foreignName: string
-  method: DepMethod
-  lifeMonths: number
-  decliningFactor: number | null
-  periodicity: Periodicity
-  prorata: Prorata
+/** The six account codes of a class — §3.1.1 stores them per (class × area). */
+export interface ClassAccounts {
   assetAcct: string
   accumAcct: string
   expenseAcct: string
   gainAcct: string
   lossAcct: string
   revalSurplusAcct: string
+}
+
+/** §3.1 AssetClass — accounting template. Account codes live in `classAreaAccounts` (§3.1.1). */
+export interface AssetClass {
+  id: string
+  code: string
+  name: string
+  foreignName: string
+  kind: AssetKind
+  method: DepMethod
+  lifeMonths: number
+  decliningFactor: number | null
+  periodicity: Periodicity
+  prorata: Prorata
   isDepreciable: boolean
   isActive: boolean
+}
+
+/** §3.1.1 AssetClassAreaAccounts */
+export interface ClassAreaAccounts extends ClassAccounts { classId: string; areaId: string }
+
+/** §3.2 DepreciationArea */
+export interface DepArea { id: string; code: string; name: string; postsToGl: boolean; isDefault: boolean; isActive: boolean }
+
+/** §3.2.1 AssetAreaSetting — per asset × area. The same-named Asset columns are a denormalized copy of the default row. */
+export interface AssetAreaSetting {
+  assetId: string
+  areaId: string
+  method: DepMethod
+  lifeMonths: number
+  decliningFactor: number | null
+  periodicity: Periodicity
+  prorata: Prorata
+  salvage: number
+  depStartDate: string
+  importedAccum: number
+  remainingLifeAtImport: number | null
 }
 
 /** §3.3 AssetLocation — tree */
@@ -63,8 +94,12 @@ export interface Asset {
   tagNumber: string
   partnerId: string
   sourceDocRef: string
+  /** §5.6.6 purchase-bill line and its 1..N sequence */
+  sourceDocLine: string
+  sourceLineSeq: number | null
   acquisitionDate: string
   depStartDate: string
+  /** Original value (APC) — changed only by AddCost / ReduceCost (§5.6.2–5.6.3) */
   originalValue: number
   salvage: number
   lifeMonths: number
@@ -72,13 +107,17 @@ export interface Asset {
   periodicity: Periodicity
   prorata: Prorata
   decliningFactor: number | null
+  capitalizationDate: string | null
   state: AssetState
   isLegacy: boolean
   importedAccum: number
-  /** Σ revaluation adjustments (±), derived from posted revaluation transactions */
+  /** Legacy only: period-end date of the go-live cut-off (§3.5) */
+  importCutoffDate: string | null
+  /** Legacy only, mandatory: remaining life in months at the cut-off (§3.5) */
+  remainingLifeAtImport: number | null
+  /** Σ revaluation (+) and impairment (−) adjustments */
   revaluationAdj: number
-  /** Σ maintenance costs capitalized onto the asset (improvements) */
-  capitalizedCost: number
+  /** Current cost center; history is in CostCenterTransfer transactions (§5.5) */
   costCenterId: string
   project: string
 }
@@ -87,21 +126,28 @@ export interface Asset {
 export interface DepLine {
   id: string
   assetId: string
+  areaId: string
   seq: number
-  date: string // period end, YYYY-MM-DD
-  type: 'depreciation' | 'revaluation' | 'removal'
+  date: string // period end (or event date for ToDate), YYYY-MM-DD
+  type: 'depreciation' | 'manual' | 'toDate'
   days: number | null
+  /** Share of a full period this line represents (1 = full; f for a prorated first line; null = completion line) */
+  fraction: number | null
   amount: number
   accum: number
   remaining: number
   isPosted: boolean
   runId: string | null
+  /** Transaction that created a Manual / ToDate line */
+  txId: string | null
 }
 
 /** §3.7 AssetTransaction */
 export interface AssetTx {
   id: string
   number: string
+  /** §3.10 document type code, '' when the event has none */
+  docType: string
   assetId: string
   type: TxType
   date: string
@@ -114,8 +160,23 @@ export interface AssetTx {
   toCustodianId?: string
   fromCostCenterId?: string
   toCostCenterId?: string
+  fromState?: AssetState
+  toState?: AssetState
+  /** Accumulated depreciation removed by a Sale / Disposal (frozen for the roll-forward) */
+  accumulatedAtEvent?: number
+  /** Depreciation to date posted inside a Sale / Disposal (§5.6.1) */
+  toDateAmount?: number
   party?: string
+  sourceDocRef?: string
+  reversedTxId?: string
+  isReversed: boolean
+  /** Adjustment that changed the useful life (a dependent event for run reversal, §3.8.1 rule 4) */
+  changesLife?: boolean
+  /** Entry posted by the module for this event */
   journal: JournalLine[]
+  /** Entry posted by another module for the same event (purchase bill, opening-balance import) — shown for reconciliation */
+  externalJournal: JournalLine[]
+  externalNote?: string
   notes: string
   user: string
 }
@@ -125,12 +186,15 @@ export interface RunLine { assetId: string; lineId: string; amount: number; expe
 export interface DepRun {
   id: string
   number: string
-  periodEnd: string // YYYY-MM
+  periodStart: string // YYYY-MM-DD
+  periodEnd: string // YYYY-MM (monthly accounting period)
+  areaId: string
   classId: string // '' = all classes
   status: RunStatus
   lines: RunLine[]
   createdAt: string
   postedAt: string | null
+  reversedAt: string | null
   notes: string
 }
 
@@ -147,14 +211,27 @@ export interface Maintenance {
   doneDate: string | null
   cost: number
   intervalMonths: number // 0 = one-off; otherwise the next order is scheduled on completion
-  capitalize: boolean // add the cost to the asset value instead of expensing it
+  capitalize: boolean // post the cost as an AddCost (240) on the asset instead of expensing it
+  addCostTxId: string | null
   status: MaintStatus
   notes: string
   journal: JournalLine[]
 }
 
+export interface Settings {
+  /** First month of the fiscal year (1–12); quarters/years follow it (§5.1.1, §12.7) */
+  fiscalStartMonth: number
+  /** Minimum maintenance cost that may be capitalized (IQD) */
+  capThreshold: number
+  /** §5.6.5 Assets:LowValueThreshold — null = disabled */
+  lowValueThreshold: number | null
+}
+
 export interface DB {
   classes: AssetClass[]
+  classAreaAccounts: ClassAreaAccounts[]
+  areas: DepArea[]
+  areaSettings: AssetAreaSetting[]
   groups: AssetGroup[]
   locations: AssetLocation[]
   employees: Employee[]
@@ -166,7 +243,6 @@ export interface DB {
   txs: AssetTx[]
   runs: DepRun[]
   maintenance: Maintenance[]
-  /** Minimum maintenance cost that may be capitalized (IQD) */
-  capThreshold: number
+  settings: Settings
   role: RoleId
 }
