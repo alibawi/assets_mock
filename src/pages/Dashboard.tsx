@@ -27,7 +27,7 @@ export default function Dashboard() {
   }).filter((x) => x.n).sort((a, b) => b.gross - a.gross)
   const max = Math.max(...byClass.map((x) => x.gross), 1)
 
-  const states: AssetState[] = ['draft', 'running', 'paused', 'closed', 'sold', 'disposed']
+  const states: AssetState[] = ['draft', 'running', 'paused', 'closed', 'sold', 'disposed', 'cancelled']
   const octPosted = posted.some((r) => r.periodEnd === '2026-10')
   const drafts = db.assets.filter((a) => a.state === 'draft')
   const paused = db.assets.filter((a) => a.state === 'paused')

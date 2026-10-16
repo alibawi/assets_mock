@@ -1,13 +1,14 @@
 import {
   Archive, ArrowLeftRight, BarChart3, Bell, BellRing, Boxes, Building2, ChevronDown, ChevronLeft, ClipboardList, Cog, Factory,
   FolderKanban, Globe, Handshake, Landmark, Languages, LayoutDashboard, MapPin, Menu, Monitor, Package, Plus, Search,
-  Settings, Shield, ShoppingBag, ShoppingCart, Store, Tags, TrendingDown, TrendingUp, Truck, Users, Layers, UserCog, Wrench,
+  Settings, Shield, ShoppingBag, ShoppingCart, Store, Tags, TrendingDown, TrendingUp, Truck, Users, Layers, UserCog, Wrench, RotateCcw, Dot,
   type LucideIcon,
 } from 'lucide-react'
 import { useState, type ReactNode } from 'react'
-import { Link, NavLink, useNavigate } from 'react-router-dom'
+import { Link, NavLink, useLocation, useNavigate } from 'react-router-dom'
 import { roleLabel } from '../data/format'
-import { useStore } from '../data/store'
+import { DATA_VERSION, useStore } from '../data/store'
+import { Confirm } from './ui'
 import type { RoleId } from '../data/types'
 
 const otherModules: [string, LucideIcon][] = [
@@ -17,13 +18,20 @@ const otherModules: [string, LucideIcon][] = [
   ['إدارة المشاريع', FolderKanban], ['التصنيع', Factory],
 ]
 
-export const assetNav: { to: string; label: string; icon: LucideIcon; section?: string }[] = [
+export const assetNav: { to: string; label: string; icon: LucideIcon; section?: string; sub?: boolean }[] = [
   { to: '/', label: 'لوحة المعلومات', icon: LayoutDashboard },
   { to: '/assets', label: 'سجل الأصول', icon: Package },
   { to: '/runs', label: 'دورات الإهلاك', icon: TrendingDown },
   { to: '/transactions', label: 'حركات الأصول', icon: ArrowLeftRight },
   { to: '/maintenance', label: 'الصيانة', icon: Wrench },
   { to: '/reports', label: 'التقارير', icon: BarChart3 },
+  { to: '/reports?r=register', label: 'سجل الأصول بتاريخ', icon: Dot, sub: true },
+  { to: '/reports?r=roll', label: 'جدول الحركة', icon: Dot, sub: true },
+  { to: '/reports?r=ledger', label: 'بطاقة الأصل', icon: Dot, sub: true },
+  { to: '/reports?r=forecast', label: 'توقّع الإهلاك', icon: Dot, sub: true },
+  { to: '/reports?r=location', label: 'حسب الموقع / العهدة', icon: Dot, sub: true },
+  { to: '/reports?r=disposals', label: 'الاستبعادات', icon: Dot, sub: true },
+  { to: '/reports?r=recon', label: 'مطابقة دفتر الأستاذ', icon: Dot, sub: true },
   { to: '/classes', label: 'فئات الأصول', icon: Tags, section: 'الإعدادات' },
   { to: '/locations', label: 'المواقع', icon: MapPin },
   { to: '/groups', label: 'المجموعات', icon: Layers },
@@ -32,6 +40,7 @@ export const assetNav: { to: string; label: string; icon: LucideIcon; section?: 
 
 function Sidebar({ collapsed, onToggle }: { collapsed: boolean; onToggle: () => void }) {
   const { toast } = useStore()
+  const loc = useLocation()
   const [open, setOpen] = useState(true)
   const outOfScope = () => toast('هذه الوحدة خارج نطاق النموذج التجريبي')
   const item = 'flex w-full items-center gap-2.5 rounded-md px-2.5 py-2 text-[13px] text-gray-700 hover:bg-gray-100'
@@ -56,7 +65,20 @@ function Sidebar({ collapsed, onToggle }: { collapsed: boolean; onToggle: () => 
           </button>
           {open && (
             <div className="space-y-0.5 pb-1.5">
-              {assetNav.map(({ to, label, icon: Icon, section }) => (
+              {assetNav.map(({ to, label, icon: Icon, section, sub }) => sub ? (
+                !collapsed && (
+                  <Link
+                    key={to}
+                    to={to}
+                    className={`flex items-center gap-1 rounded-md py-1 pe-2 ps-12 text-[12px] ${
+                      loc.pathname === '/reports' && (new URLSearchParams(loc.search).get('r') ?? 'register') === new URLSearchParams(to.split('?')[1]).get('r')
+                        ? 'font-semibold text-navy' : 'text-gray-500 hover:text-navy'
+                    }`}
+                  >
+                    <Icon className="h-3 w-3 shrink-0" />{label}
+                  </Link>
+                )
+              ) : (
                 <div key={to}>
                 {section && !collapsed && <div className="pe-2 ps-7 pb-1 pt-2 text-[10px] font-semibold uppercase tracking-wide text-gray-400">{section}</div>}
                 <NavLink
@@ -104,8 +126,9 @@ function Sidebar({ collapsed, onToggle }: { collapsed: boolean; onToggle: () => 
 }
 
 function RoleMenu() {
-  const { db, run } = useStore()
+  const { db, run, reset, toast } = useStore()
   const [open, setOpen] = useState(false)
+  const [ask, setAsk] = useState(false)
   return (
     <div className="relative ms-2 border-s border-line ps-3">
       <button type="button" onClick={() => setOpen((o) => !o)} className="flex items-center gap-2 rounded-md p-1 hover:bg-gray-50">
@@ -128,7 +151,16 @@ function RoleMenu() {
               {roleLabel[r]}
             </button>
           ))}
+          <div className="my-1 border-t border-line" />
+          <button type="button" onClick={() => { setOpen(false); setAsk(true) }} className="flex w-full items-center gap-1.5 px-3 py-1.5 text-start text-sm text-red-600 hover:bg-red-50">
+            <RotateCcw className="h-3.5 w-3.5" />إعادة تعيين البيانات التجريبية
+          </button>
+          <div className="px-3 pb-1 text-[10px] text-gray-400" dir="ltr">data v{DATA_VERSION}</div>
         </div>
+      )}
+      {ask && (
+        <Confirm danger title="إعادة تعيين البيانات التجريبية" text="سيتم حذف كل التعديلات وإرجاع بيانات العرض الأصلية." onClose={() => setAsk(false)}
+          onYes={() => { reset(); toast('تمت إعادة تعيين البيانات التجريبية'); window.location.hash = '#/' }} />
       )}
     </div>
   )

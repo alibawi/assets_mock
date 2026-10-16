@@ -1,8 +1,12 @@
 // Demo data. Chart-of-accounts codes follow plan §3.9; codes marked "مقترح" are placeholders the
 // accountant still has to approve (plan §12, open decision 1).
-import { bookValue, generateSchedule, monthEnd } from './calc'
-import { capitalize, completeMaint, createRun, dispose, maintJournal, pause, postRun, revalue, sell, transfer } from './lifecycle'
-import type { Account, Asset, AssetClass, AssetGroup, AssetLocation, CostCenter, DB, Employee, Maintenance, Partner } from './types'
+import { bookValue, DEFAULT_AREA, generateSchedule, monthEnd } from './calc'
+import {
+  capitalize, completeMaint, costCenterTransfer, createRun, dispose, impair, maintJournal, nextNo, pause, postRun, revalue, sell, transfer,
+} from './lifecycle'
+import type {
+  Account, Asset, AssetClass, AssetGroup, AssetLocation, ClassAreaAccounts, CostCenter, DB, Employee, Maintenance, Partner,
+} from './types'
 
 const accounts: Account[] = [
   { code: '1100000000', name: 'الموجودات الثابتة', postable: false },
@@ -13,32 +17,49 @@ const accounts: Account[] = [
   { code: '1100000006', name: 'خطوط كهرباء وهاتف', postable: true },
   { code: '1100000008', name: 'نفقات تأسيس', postable: true },
   { code: '1100000009', name: 'أراضي (مقترح)', postable: true },
+  { code: '1150000001', name: 'موجودات غير ملموسة — برمجيات وتراخيص (مقترح)', postable: true },
   { code: '1190000000', name: 'مجمّع الاندثار', postable: false },
   { code: '1190000001', name: 'مجمّع اندثار مباني', postable: true },
   { code: '1190000002', name: 'مجمّع اندثار آلات ومعدات', postable: true },
   { code: '1190000003', name: 'مجمّع اندثار وسائط نقل', postable: true },
   { code: '1190000004', name: 'مجمّع اندثار أثاث وأجهزة مكتب', postable: true },
+  { code: '1195000001', name: 'مجمّع إطفاء موجودات غير ملموسة (مقترح)', postable: true },
   { code: '1200000001', name: 'النقد / المدينون (مقترح)', postable: true },
   { code: '2100000001', name: 'الموردون (مقترح)', postable: true },
   { code: '2500000001', name: 'فائض إعادة التقييم (مقترح)', postable: true },
+  { code: '3600000001', name: 'مصروف صيانة الموجودات (مقترح)', postable: true },
   { code: '3700000000', name: 'الاندثار', postable: false },
   { code: '3700000001', name: 'اندثار مباني وإنشاءات وطرق', postable: true },
   { code: '3700000002', name: 'اندثار آلات ومعدات', postable: true },
   { code: '3700000003', name: 'اندثار وسائل نقل وانتقال', postable: true },
   { code: '3700000004', name: 'اندثار أثاث وأجهزة مكاتب', postable: true },
-  { code: '3600000001', name: 'مصروف صيانة الموجودات (مقترح)', postable: true },
+  { code: '3700000005', name: 'إطفاء نفقات إيرادية مؤجلة', postable: true },
+  { code: '3700000006', name: 'إطفاء موجودات غير ملموسة (مقترح)', postable: true },
   { code: '3800000001', name: 'خسائر بيع واستبعاد موجودات ثابتة (مقترح)', postable: true },
   { code: '4900000001', name: 'أرباح بيع موجودات ثابتة (مقترح)', postable: true },
 ]
 
-const common = { gainAcct: '4900000001', lossAcct: '3800000001', revalSurplusAcct: '2500000001', isActive: true }
 const classes: AssetClass[] = [
-  { id: 'c1', code: 'BLD', name: 'مباني وإنشاءات', foreignName: 'Buildings', method: 'SL', lifeMonths: 300, decliningFactor: null, periodicity: 'Y', prorata: 'CONST', assetAcct: '1100000001', accumAcct: '1190000001', expenseAcct: '3700000001', isDepreciable: true, ...common },
-  { id: 'c2', code: 'MCH', name: 'آلات ومعدات', foreignName: 'Machinery & Equipment', method: 'DBSL', lifeMonths: 120, decliningFactor: 2, periodicity: 'M', prorata: 'DAYS', assetAcct: '1100000002', accumAcct: '1190000002', expenseAcct: '3700000002', isDepreciable: true, ...common },
-  { id: 'c3', code: 'VEH', name: 'وسائط نقل', foreignName: 'Vehicles', method: 'SL', lifeMonths: 60, decliningFactor: null, periodicity: 'M', prorata: 'NONE', assetAcct: '1100000003', accumAcct: '1190000003', expenseAcct: '3700000003', isDepreciable: true, ...common },
-  { id: 'c4', code: 'FUR', name: 'أثاث وأجهزة مكتب', foreignName: 'Furniture & Office Equipment', method: 'SL', lifeMonths: 96, decliningFactor: null, periodicity: 'M', prorata: 'NONE', assetAcct: '1100000004', accumAcct: '1190000004', expenseAcct: '3700000004', isDepreciable: true, ...common },
-  { id: 'c5', code: 'ITE', name: 'أجهزة حاسوب وشبكات', foreignName: 'IT Equipment', method: 'DB', lifeMonths: 48, decliningFactor: 2, periodicity: 'M', prorata: 'NONE', assetAcct: '1100000004', accumAcct: '1190000004', expenseAcct: '3700000004', isDepreciable: true, ...common },
-  { id: 'c6', code: 'LND', name: 'أراضي', foreignName: 'Land', method: 'NONE', lifeMonths: 0, decliningFactor: null, periodicity: 'Y', prorata: 'NONE', assetAcct: '1100000009', accumAcct: '', expenseAcct: '', isDepreciable: false, ...common },
+  { id: 'c1', code: 'BLD', name: 'مباني وإنشاءات', foreignName: 'Buildings', kind: 'tangible', method: 'SL', lifeMonths: 300, decliningFactor: null, periodicity: 'Y', prorata: 'CONST', isDepreciable: true, isActive: true },
+  { id: 'c2', code: 'MCH', name: 'آلات ومعدات', foreignName: 'Machinery & Equipment', kind: 'tangible', method: 'DBSL', lifeMonths: 120, decliningFactor: 2, periodicity: 'M', prorata: 'DAYS', isDepreciable: true, isActive: true },
+  { id: 'c3', code: 'VEH', name: 'وسائط نقل', foreignName: 'Vehicles', kind: 'tangible', method: 'SL', lifeMonths: 60, decliningFactor: null, periodicity: 'M', prorata: 'DAYS', isDepreciable: true, isActive: true },
+  { id: 'c4', code: 'FUR', name: 'أثاث وأجهزة مكتب', foreignName: 'Furniture & Office Equipment', kind: 'tangible', method: 'SL', lifeMonths: 96, decliningFactor: null, periodicity: 'M', prorata: 'NONE', isDepreciable: true, isActive: true },
+  { id: 'c5', code: 'ITE', name: 'أجهزة حاسوب وشبكات', foreignName: 'IT Equipment', kind: 'tangible', method: 'DB', lifeMonths: 48, decliningFactor: 2, periodicity: 'M', prorata: 'NONE', isDepreciable: true, isActive: true },
+  { id: 'c6', code: 'LND', name: 'أراضي', foreignName: 'Land', kind: 'land', method: 'NONE', lifeMonths: 0, decliningFactor: null, periodicity: 'Y', prorata: 'NONE', isDepreciable: false, isActive: true },
+  { id: 'c7', code: 'SFT', name: 'برمجيات وتراخيص', foreignName: 'Software & Licences', kind: 'intangible', method: 'SL', lifeMonths: 36, decliningFactor: null, periodicity: 'M', prorata: 'NONE', isDepreciable: true, isActive: true },
+  { id: 'c8', code: 'LVA', name: 'أصول منخفضة القيمة', foreignName: 'Low-value Assets', kind: 'lowValue', method: 'SL', lifeMonths: 12, decliningFactor: null, periodicity: 'M', prorata: 'NONE', isDepreciable: true, isActive: true },
+]
+
+const exit = { gainAcct: '4900000001', lossAcct: '3800000001', revalSurplusAcct: '2500000001' }
+const classAreaAccounts: ClassAreaAccounts[] = [
+  { classId: 'c1', areaId: DEFAULT_AREA, assetAcct: '1100000001', accumAcct: '1190000001', expenseAcct: '3700000001', ...exit },
+  { classId: 'c2', areaId: DEFAULT_AREA, assetAcct: '1100000002', accumAcct: '1190000002', expenseAcct: '3700000002', ...exit },
+  { classId: 'c3', areaId: DEFAULT_AREA, assetAcct: '1100000003', accumAcct: '1190000003', expenseAcct: '3700000003', ...exit },
+  { classId: 'c4', areaId: DEFAULT_AREA, assetAcct: '1100000004', accumAcct: '1190000004', expenseAcct: '3700000004', ...exit },
+  { classId: 'c5', areaId: DEFAULT_AREA, assetAcct: '1100000004', accumAcct: '1190000004', expenseAcct: '3700000004', ...exit },
+  { classId: 'c6', areaId: DEFAULT_AREA, assetAcct: '1100000009', accumAcct: '', expenseAcct: '', ...exit },
+  { classId: 'c7', areaId: DEFAULT_AREA, assetAcct: '1150000001', accumAcct: '1195000001', expenseAcct: '3700000006', ...exit },
+  { classId: 'c8', areaId: DEFAULT_AREA, assetAcct: '1100000004', accumAcct: '1190000004', expenseAcct: '3700000004', ...exit },
 ]
 
 const groups: AssetGroup[] = [
@@ -74,6 +95,7 @@ const partners: Partner[] = [
   { id: 'p7', name: 'شركة الأفق للحاسبات' }, { id: 'p8', name: 'وكالة كيا العراق' }, { id: 'p9', name: 'شركة المعدات الحديثة' },
   { id: 'p10', name: 'Atlas Copco Iraq' }, { id: 'p11', name: 'شركة الفرات للتبريد' }, { id: 'p12', name: 'هيكفيجن العراق' },
   { id: 'p13', name: 'ZKTeco Iraq' }, { id: 'p14', name: 'Canon Iraq' }, { id: 'p15', name: 'شركة دجلة للإنشاءات' },
+  { id: 'p16', name: 'شركة إنكي للبرمجيات' },
 ]
 
 const costCenters: CostCenter[] = [
@@ -82,12 +104,14 @@ const costCenters: CostCenter[] = [
   { id: 'cc5', code: 'CC-05', name: 'المبيعات والتوزيع' }, { id: 'cc6', code: 'CC-06', name: 'الخدمات اللوجستية' },
 ]
 
+const CUTOFF = '2025-12-31' // go-live: period end of December 2025 (§3.5 ImportCutoffDate)
+
 // name, class, group, location, custodian, costCenter, partner, acquisition, original, salvage,
-// legacy? [importedAccum, remainingLifeMonths], sourceDocRef, serial
+// legacy? [importedAccum, remainingLifeMonthsAtImport], sourceDocRef, serial
 type R = [string, string, string, string, string, string, string, string, number, number, [number, number] | null, string, string]
 const rows: R[] = [
   ['مبنى المقر الرئيسي', 'c1', 'g1', 'l11', 'e1', 'cc1', 'p1', '2019-01-01', 1850000000, 185000000, [466200000, 216], '', 'BLD-HQ-01'],
-  ['مستودع أبو غريب - هنكر رئيسي', 'c1', 'g3', 'l12', 'e5', 'cc6', 'p15', '2020-06-01', 640000000, 64000000, [126720000, 234], '', 'BLD-WH-01'],
+  ['مستودع أبو غريب - هنكر رئيسي', 'c1', 'g3', 'l12', 'e5', 'cc6', 'p15', '2020-06-01', 640000000, 64000000, [126720000, 240], '', 'BLD-WH-01'],
   ['أرض معمل الزعفرانية', 'c6', 'g2', 'l13', 'e7', 'cc4', 'p1', '2018-03-01', 900000000, 0, [0, 0], '', 'LND-FAC-01'],
   ['خط تعبئة أوتوماتيكي Krones', 'c2', 'g2', 'l13', 'e7', 'cc4', 'p4', '2021-04-01', 310000000, 15500000, [165000000, 63], '', 'KR-MF-77821'],
   ['مولدة كهربائية 500 KVA', 'c2', 'g1', 'l11', 'e1', 'cc1', 'p5', '2020-01-01', 95000000, 4750000, [61000000, 48], '', 'PK-2506-1180'],
@@ -110,6 +134,10 @@ const rows: R[] = [
   ['منظومة كاميرات مراقبة Hikvision', 'c4', 'g3', 'l12', 'e5', 'cc6', 'p12', '2026-08-01', 8900000, 0, null, 'PB-2026-0110', 'HK-NVR-6612'],
   ['شاشات عرض تفاعلية Samsung Flip', 'c4', 'g1', 'l11', 'e1', 'cc1', 'p7', '2026-10-01', 7600000, 0, null, 'PB-2026-0131', 'SM-FLIP-02'],
   ['جهاز بصمة دوام ZKTeco', 'c4', 'g1', 'l31', 'e4', 'cc1', 'p13', '2026-10-12', 1350000, 0, null, '', 'ZK-MB360-1'],
+  ['رخصة نظام ENKI ERP (اشتراك 3 سنوات)', 'c7', 'g1', 'l11', 'e3', 'cc3', 'p16', '2026-01-01', 54000000, 0, null, 'PB-2026-0003', 'LIC-ENKI-2026'],
+  ['كراسي مكتب تنفيذية', 'c8', 'g1', 'l11', 'e4', 'cc1', 'p6', '2026-03-10', 450000, 0, null, 'PB-2026-0061', '—'],
+  ['مراوح سقفية للمستودع', 'c8', 'g3', 'l12', 'e5', 'cc6', 'p11', '2026-06-15', 720000, 0, null, '', '—'],
+  ['طابعة ملصقات باركود Zebra', 'c4', 'g3', 'l12', 'e5', 'cc6', 'p7', '2026-09-01', 2100000, 0, null, '', 'ZB-ZT411'],
 ]
 
 function buildAssets(): Asset[] {
@@ -118,51 +146,90 @@ function buildAssets(): Asset[] {
     return {
       id: `a${i + 1}`, code: `FA-${String(i + 1).padStart(6, '0')}`, name, description: '',
       classId: cid, groupId: gid, locationId: loc, custodianId: cust, serial, tagNumber: `TAG-${String(10240 + i * 7)}`,
-      partnerId: partner, sourceDocRef: src, acquisitionDate: acq, depStartDate: legacy ? '2026-01-01' : acq,
-      originalValue: orig, salvage, lifeMonths: legacy ? legacy[1] : c.lifeMonths, method: c.method, periodicity: c.periodicity,
-      prorata: c.prorata, decliningFactor: c.decliningFactor, state: 'draft', isLegacy: !!legacy, importedAccum: legacy ? legacy[0] : 0,
-      revaluationAdj: 0, capitalizedCost: 0, costCenterId: cc, project: '',
+      partnerId: partner, sourceDocRef: src, sourceDocLine: src ? '1' : '', sourceLineSeq: null, acquisitionDate: acq, depStartDate: acq,
+      originalValue: orig, salvage, lifeMonths: c.lifeMonths, method: c.method, periodicity: c.periodicity, prorata: c.prorata,
+      decliningFactor: c.decliningFactor, capitalizationDate: null, state: 'draft', isLegacy: !!legacy, importedAccum: legacy ? legacy[0] : 0,
+      importCutoffDate: legacy ? CUTOFF : null, remainingLifeAtImport: legacy ? legacy[1] : null, revaluationAdj: 0, costCenterId: cc, project: '',
     }
+  })
+}
+
+/** §5.6.6 demo: a purchase-bill line of 3 monitors creates 3 draft assets; the last one takes the rounding difference. */
+function billLineDrafts(db: DB) {
+  const total = 10000000
+  const each = Math.round(total / 3)
+  for (let i = 1; i <= 3; i++) {
+    const n = db.assets.length + 1
+    db.assets.push({
+      ...db.assets[22], id: `a${n}`, code: `FA-${String(n).padStart(6, '0')}`, name: `شاشات عرض Dell UltraSharp 34 (${i}/3)`, partnerId: 'p7',
+      acquisitionDate: '2026-10-14', depStartDate: '2026-10-14', originalValue: i === 3 ? total - each * 2 : each, sourceDocRef: 'PB-2026-0140',
+      sourceDocLine: '2', sourceLineSeq: i, serial: `DL-U34-${i}`, tagNumber: `TAG-${String(10600 + i)}`, classId: 'c5', method: 'DB',
+      lifeMonths: 48, decliningFactor: 2, prorata: 'NONE', periodicity: 'M',
+    })
+  }
+}
+
+function importLegacy(db: DB) {
+  // Opening-balance batch (239 AOB): no module entry — the ledger's opening balances come from their own process (§3.10).
+  const batch = nextNo('AOB', [], '2025')
+  db.assets.filter((a) => a.isLegacy).forEach((a) => {
+    const c = db.classes.find((x) => x.id === a.classId)!
+    const ac = db.classAreaAccounts.find((x) => x.classId === c.id)!
+    a.state = 'running'
+    a.capitalizationDate = CUTOFF
+    db.areaSettings.push({
+      assetId: a.id, areaId: DEFAULT_AREA, method: a.method, lifeMonths: a.lifeMonths, decliningFactor: a.decliningFactor, periodicity: a.periodicity,
+      prorata: a.prorata, salvage: a.salvage, depStartDate: a.depStartDate, importedAccum: a.importedAccum, remainingLifeAtImport: a.remainingLifeAtImport,
+    })
+    generateSchedule(db, a, c)
+    if (!db.lines.some((l) => l.assetId === a.id) && c.isDepreciable) a.state = 'closed'
+    const ext = [
+      { account: `${ac.assetAcct} — ${accounts.find((x) => x.code === ac.assetAcct)?.name}`, desc: `رصيد افتتاحي ${a.code}`, debit: a.originalValue, credit: 0 },
+      ...(a.importedAccum ? [{ account: `${ac.accumAcct} — ${accounts.find((x) => x.code === ac.accumAcct)?.name}`, desc: `رصيد افتتاحي ${a.code}`, debit: 0, credit: a.importedAccum }] : []),
+      { account: 'أرصدة افتتاحية — خارج الوحدة', desc: `رصيد افتتاحي ${a.code}`, debit: 0, credit: a.originalValue - a.importedAccum },
+    ]
+    db.txs.push({
+      id: `tx-ob-${a.id}`, number: batch, docType: '239', assetId: a.id, type: 'openingBalance', date: CUTOFF, amount: a.originalValue,
+      fromValue: 0, toValue: a.originalValue, isReversed: false, journal: [], externalJournal: ext, externalNote: 'الأرصدة الافتتاحية للأستاذ (عملية مستقلة)',
+      notes: `استيراد رصيد افتتاحي — مجمّع ${a.importedAccum.toLocaleString('en-US')}، عمر متبقٍّ ${a.remainingLifeAtImport} شهراً`, user: 'superadmin',
+    })
   })
 }
 
 export function seed(): DB {
   const db: DB = {
-    classes, groups, locations, employees, partners, costCenters, accounts,
-    assets: buildAssets(), lines: [], txs: [], runs: [], maintenance: [], capThreshold: 5000000, role: 'superadmin',
+    classes: structuredClone(classes), classAreaAccounts: structuredClone(classAreaAccounts),
+    areas: [{ id: DEFAULT_AREA, code: '01', name: 'Local GAAP', postsToGl: true, isDefault: true, isActive: true }],
+    areaSettings: [], groups, locations, employees, partners, costCenters, accounts,
+    assets: buildAssets(), lines: [], txs: [], runs: [], maintenance: [],
+    settings: { fiscalStartMonth: 1, capThreshold: 5000000, lowValueThreshold: null },
+    role: 'superadmin',
   }
-  db.classes = structuredClone(classes)
-
-  // Go-live 2026-01-01: legacy assets imported with their accumulated depreciation (plan §14 أ.8).
-  db.assets.filter((a) => a.isLegacy).forEach((a) => {
-    a.state = 'running'
-    generateSchedule(db, a, db.classes.find((c) => c.id === a.classId)!)
-    db.txs.push({
-      id: `tx-l-${a.id}`, number: `AAJ-2026-${String(db.txs.length + 1).padStart(4, '0')}`, assetId: a.id, type: 'adjustment',
-      date: '2026-01-01', amount: a.originalValue, fromValue: null, toValue: a.originalValue - a.importedAccum, journal: [],
-      notes: `استيراد كرصيد افتتاحي — إهلاك سابق ${a.importedAccum.toLocaleString('en-US')}`, user: 'superadmin',
-    })
-  })
+  billLineDrafts(db)
+  importLegacy(db)
 
   const before: Record<number, ((d: DB) => void)[]> = {
     7: [(d) => dispose(d, 'a11', '2026-07-10', 'تلف وحدة الطباعة — شطب بقرار لجنة الجرد')],
     8: [(d) => sell(d, 'a7', '2026-08-20', 21000000, 'معرض السلام للسيارات', 'بيع بالمزايدة')],
     9: [
       (d) => pause(d, 'a5', '2026-09-01', 'عطل في المحرك — بانتظار قطع غيار'),
-      (d) => transfer(d, 'a8', '2026-09-05', { locationId: 'l21', custodianId: 'e6', costCenterId: 'cc5' }, ''),
+      (d) => costCenterTransfer(d, 'a8', '2026-09-01', 'cc5', ''),
+      (d) => transfer(d, 'a8', '2026-09-05', { locationId: 'l21', custodianId: 'e6' }, 'انتقال السيارة إلى فرع البصرة'),
     ],
   }
   const after: Record<number, ((d: DB) => void)[]> = {
     6: [(d) => revalue(d, 'a1', '2026-06-30', bookValue(d, d.assets[0]) + 250000000, 'تقييم المكتب الاستشاري العراقي للعقارات')],
-    7: [(d) => transfer(d, 'a10', '2026-07-20', { locationId: 'l21', custodianId: 'e6', costCenterId: 'cc1' }, '')],
+    7: [(d) => transfer(d, 'a10', '2026-07-20', { locationId: 'l21', custodianId: 'e6' }, '')],
+    8: [(d) => impair(d, 'a12', '2026-09-02', bookValue(d, d.assets[11]) - 1500000, 'تلف وحدة التبريد بعد ارتفاع الحرارة — تقرير فني')],
   }
 
   for (let m = 1; m <= 9; m++) {
     const ym = `2026-${String(m).padStart(2, '0')}`
-    db.assets.filter((a) => !a.isLegacy && a.state === 'draft' && a.acquisitionDate.slice(0, 7) === ym).forEach((a) => capitalize(db, a.id, a.acquisitionDate))
+    db.assets.filter((a) => !a.isLegacy && a.state === 'draft' && a.acquisitionDate.slice(0, 7) === ym && a.acquisitionDate <= '2026-09-30')
+      .forEach((a) => capitalize(db, a.id, a.acquisitionDate))
     before[m]?.forEach((f) => f(db))
     const r = createRun(db, ym, '', `دورة إهلاك شهر ${m}/2026`)
-    postRun(db, r.id, monthEnd(ym))
+    if (typeof r !== 'string') postRun(db, r.id, monthEnd(ym))
     after[m]?.forEach((f) => f(db))
   }
   seedMaintenance(db)
@@ -185,16 +252,16 @@ function seedMaintenance(db: DB) {
   rows.forEach(([assetId, type, partnerId, plannedDate, cost, intervalMonths, status, notes], i) => {
     const m: Maintenance = {
       id: `m${i + 1}`, number: `MNT-2026-${String(i + 1).padStart(4, '0')}`, assetId, type, partnerId, plannedDate,
-      doneDate: status === 'done' ? plannedDate : null, cost, intervalMonths, capitalize: false, status, notes, journal: [],
+      doneDate: status === 'done' ? plannedDate : null, cost, intervalMonths, capitalize: false, addCostTxId: null, status, notes, journal: [],
     }
     if (status === 'done') m.journal = maintJournal(db, m)
     db.maintenance.push(m)
   })
-  // A capitalized overhaul, completed after the September run.
+  // A capitalized overhaul, completed after the September run — posted as AddCost (240).
   db.maintenance.push({
     id: 'm9', number: 'MNT-2026-0009', assetId: 'a4', type: 'corrective', partnerId: 'p4', plannedDate: '2026-09-20', doneDate: null,
-    cost: 18000000, intervalMonths: 0, capitalize: true, status: 'inProgress', journal: [],
+    cost: 18000000, intervalMonths: 0, capitalize: true, addCostTxId: null, status: 'inProgress', journal: [],
     notes: 'استبدال وحدة التعبئة الرئيسية بوحدة أحدث — تُطيل العمر وترفع الطاقة الإنتاجية',
   })
-  completeMaint(db, 'm9', '2026-09-30', 18000000)
+  completeMaint(db, 'm9', '2026-10-01', 18000000)
 }

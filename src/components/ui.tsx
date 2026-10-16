@@ -94,7 +94,7 @@ export function Tabs<T extends string>({ tabs, active, onChange }: {
   tabs: { id: T; label: string; icon?: LucideIcon; count?: number }[]; active: T; onChange: (t: T) => void
 }) {
   return (
-    <div className="flex gap-1 overflow-x-auto border-b border-line px-2">
+    <div className="flex flex-wrap gap-x-1 border-b border-line px-2">
       {tabs.map((t) => {
         const on = t.id === active
         const Icon = t.icon
