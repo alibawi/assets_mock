@@ -3,7 +3,10 @@ import { can as canRole, type Perm } from './permissions'
 import { seed } from './seed'
 import type { DB } from './types'
 
-const KEY = 'enki-assets-mock-v5'
+const KEY = 'enki-assets-mock'
+/** Bump whenever the data model or seed changes — stored data with another version is discarded and reseeded. */
+export const DATA_VERSION = 6
+const LEGACY_KEYS = ['enki-assets-mock-v1', 'enki-assets-mock-v2', 'enki-assets-mock-v3', 'enki-assets-mock-v4', 'enki-assets-mock-v5']
 
 interface Ctx {
   db: DB
@@ -18,8 +21,12 @@ const StoreCtx = createContext<Ctx | null>(null)
 
 function load(): DB {
   try {
+    LEGACY_KEYS.forEach((k) => localStorage.removeItem(k))
     const raw = localStorage.getItem(KEY)
-    if (raw) return JSON.parse(raw) as DB
+    if (raw) {
+      const saved = JSON.parse(raw) as { version?: number; db?: DB }
+      if (saved.version === DATA_VERSION && saved.db) return saved.db
+    }
   } catch {
     /* ignore */
   }
@@ -34,7 +41,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     try {
-      localStorage.setItem(KEY, JSON.stringify(db))
+      localStorage.setItem(KEY, JSON.stringify({ version: DATA_VERSION, db }))
     } catch {
       /* ignore */
     }

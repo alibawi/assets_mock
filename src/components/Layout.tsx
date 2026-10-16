@@ -1,13 +1,14 @@
 import {
   Archive, ArrowLeftRight, BarChart3, Bell, BellRing, Boxes, Building2, ChevronDown, ChevronLeft, ClipboardList, Cog, Factory,
   FolderKanban, Globe, Handshake, Landmark, Languages, LayoutDashboard, MapPin, Menu, Monitor, Package, Plus, Search,
-  Settings, Shield, ShoppingBag, ShoppingCart, Store, Tags, TrendingDown, TrendingUp, Truck, Users, Layers, UserCog, Wrench,
+  Settings, Shield, ShoppingBag, ShoppingCart, Store, Tags, TrendingDown, TrendingUp, Truck, Users, Layers, UserCog, Wrench, RotateCcw,
   type LucideIcon,
 } from 'lucide-react'
 import { useState, type ReactNode } from 'react'
 import { Link, NavLink, useNavigate } from 'react-router-dom'
 import { roleLabel } from '../data/format'
-import { useStore } from '../data/store'
+import { DATA_VERSION, useStore } from '../data/store'
+import { Confirm } from './ui'
 import type { RoleId } from '../data/types'
 
 const otherModules: [string, LucideIcon][] = [
@@ -104,8 +105,9 @@ function Sidebar({ collapsed, onToggle }: { collapsed: boolean; onToggle: () => 
 }
 
 function RoleMenu() {
-  const { db, run } = useStore()
+  const { db, run, reset, toast } = useStore()
   const [open, setOpen] = useState(false)
+  const [ask, setAsk] = useState(false)
   return (
     <div className="relative ms-2 border-s border-line ps-3">
       <button type="button" onClick={() => setOpen((o) => !o)} className="flex items-center gap-2 rounded-md p-1 hover:bg-gray-50">
@@ -128,7 +130,16 @@ function RoleMenu() {
               {roleLabel[r]}
             </button>
           ))}
+          <div className="my-1 border-t border-line" />
+          <button type="button" onClick={() => { setOpen(false); setAsk(true) }} className="flex w-full items-center gap-1.5 px-3 py-1.5 text-start text-sm text-red-600 hover:bg-red-50">
+            <RotateCcw className="h-3.5 w-3.5" />إعادة تعيين البيانات التجريبية
+          </button>
+          <div className="px-3 pb-1 text-[10px] text-gray-400" dir="ltr">data v{DATA_VERSION}</div>
         </div>
+      )}
+      {ask && (
+        <Confirm danger title="إعادة تعيين البيانات التجريبية" text="سيتم حذف كل التعديلات وإرجاع بيانات العرض الأصلية." onClose={() => setAsk(false)}
+          onYes={() => { reset(); toast('تمت إعادة تعيين البيانات التجريبية'); window.location.hash = '#/' }} />
       )}
     </div>
   )

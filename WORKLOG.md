@@ -155,3 +155,15 @@
 **Verification:** `npm run build` passes; `npm run check` all passed; browser (1366×850): every route renders, zero console errors after reload; sold FA-000006 on 2026-10-16 (ToDate 640,000 = 16/31, gain 9,800,000, balanced entry) then reversed it (back to Running, 11 lines regenerated); cost-center transfer default 2026-10-01, 2026-09-15 rejected as retroactive; October run posted with the new cost center on FA-000016; reversing September rejected by LIFO; purchase-line modal created 3 drafts 3,333,333/3,333,333/3,333,334 and refused a repeat.
 
 **Next step:** owner review; open decisions §12.1 (accounts), §12.6–12.11 confirmations.
+
+---
+
+## 2026-10-16 — "Nothing was updated" — diagnosis and fixes
+
+**Root cause:** the rev 2/3 work is on branch `claude/project-thread-lw8rtj` only; `main` (local and GitHub) still holds the earlier version (27 files behind). The reflog shows a checkout of `main` in this folder at 21:52:58 and back to the branch at 21:53:13 — anyone viewing `main` sees the old mock. The only dev server running was the one started after the branch switch (serving the new code); no stale process.
+
+**Fixes:** stored data now carries an explicit `DATA_VERSION` (6) under one key and is discarded/reseeded on any mismatch; old `-v1…-v5` keys are deleted on load. Added «إعادة تعيين البيانات التجريبية» to the user menu (with the data version shown) and renamed the settings button. Stopped tracking the `.vite` cache folder (committed on main by mistake) and added it to `.gitignore`. Cleared `node_modules/.vite`, restarted the dev server.
+
+**Verification:** `npm run build` passes; planted old data (v5) in localStorage → reload reseeded v6 (31 assets) and removed the legacy key; asset kinds, Cancel / UndoCapitalization, the seven reports (incl. Asset Ledger and Roll-forward), document types 230–243 and the reset button all visible; zero console errors.
+
+**Next step:** owner to view the branch (or approve a PR/merge into main).

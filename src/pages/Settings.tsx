@@ -61,7 +61,7 @@ export default function SettingsPage() {
       <PageHeader
         crumbs={[{ label: 'الإعدادات' }, { label: 'الصلاحيات والترقيم' }]}
         title="الإعدادات والصلاحيات والترقيم"
-        actions={<button type="button" className="btn btn-danger" onClick={() => setAsk(true)}><RotateCcw className="h-4 w-4" />إعادة تعيين بيانات العرض</button>}
+        actions={<button type="button" className="btn btn-danger" onClick={() => setAsk(true)}><RotateCcw className="h-4 w-4" />إعادة تعيين البيانات التجريبية</button>}
       />
       <div className="space-y-4">
         <Card title="إعدادات الوحدة">
