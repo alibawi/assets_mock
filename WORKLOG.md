@@ -95,3 +95,15 @@
 **Verification:** `npm run build` passes; no console errors after reload. Seeded overhaul raised FA-000004's next installment 3,175,949 → 3,646,554 with the 9 posted lines unchanged; GL reconciliation still zero. In the UI, capitalizing MNT-2026-0007 at 950,000 was rejected (below threshold); at 6,000,000 it completed and the next installment went 281,525 → 381,525.
 
 **Next step:** owner review.
+
+---
+
+## 2026-10-16 — Owner approval: maintenance capitalization rules
+
+**Module / screen:** Fixed Assets — maintenance.
+
+**Completed:** owner approved the capitalization threshold (5,000,000 IQD default, editable) and the rule that capitalized orders are one-off. Both are no longer open assumptions.
+
+**Verification:** none needed (decision record only).
+
+**Next step:** awaiting further owner feedback; project brief / discovery notes still not received.
