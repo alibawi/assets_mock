@@ -3,7 +3,7 @@ import { Fragment, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { PageHeader } from '../components/Layout'
 import { Field, Select, Tabs } from '../components/ui'
-import { accumOf, runJournal } from '../data/calc'
+import { accumOf, grossOf, runJournal } from '../data/calc'
 import { money, periodLabel, stateLabel, txLabel } from '../data/format'
 import { TODAY } from '../data/lifecycle'
 import { useLookups } from '../data/lookups'
@@ -57,7 +57,8 @@ const Head = ({ text }: { text: string }) => <div className="mb-3 text-xs text-g
 /** Value of an asset as of a date: revaluations dated ≤ date, posted lines dated ≤ date. */
 function asOfValues(db: DB, a: Asset, date: string) {
   const reval = db.txs.filter((t) => t.assetId === a.id && t.type === 'revaluation' && t.date <= date).reduce((s, t) => s + t.amount, 0)
-  const gross = a.originalValue + reval
+  const cap = db.maintenance.filter((m) => m.assetId === a.id && m.capitalize && m.status === 'done' && (m.doneDate ?? '') <= date).reduce((s, m) => s + m.cost, 0)
+  const gross = a.originalValue + reval + cap
   const accum = accumOf(db, a, date)
   return { gross, accum, nbv: gross - accum }
 }
@@ -227,13 +228,17 @@ function Reconciliation() {
     if (a.isLegacy) { add(c.assetAcct, a.originalValue); if (c.accumAcct) add(c.accumAcct, -a.importedAccum) } // opening balances
     else if (a.state !== 'draft' && a.sourceDocRef) add(c.assetAcct, a.originalValue) // posted by the purchase bill
   })
-  const journals = [...db.txs.flatMap((t) => t.journal), ...db.runs.filter((r) => r.status === 'posted').flatMap((r) => runJournal(db, r))]
+  const journals = [
+    ...db.txs.flatMap((t) => t.journal),
+    ...db.runs.filter((r) => r.status === 'posted').flatMap((r) => runJournal(db, r)),
+    ...db.maintenance.filter((m) => m.status === 'done').flatMap((m) => m.journal),
+  ]
   journals.forEach((j) => add(codeOf(j.account), j.debit - j.credit))
 
   const books = db.assets.filter((a) => a.state === 'running' || a.state === 'paused' || a.state === 'closed')
   const rows: { code: string; kind: string; gl: number; mod: number }[] = []
   ;[...new Set(db.classes.map((c) => c.assetAcct))].forEach((code) => {
-    const mod = books.filter((a) => db.classes.find((c) => c.id === a.classId)!.assetAcct === code).reduce((s, a) => s + a.originalValue + a.revaluationAdj, 0)
+    const mod = books.filter((a) => db.classes.find((c) => c.id === a.classId)!.assetAcct === code).reduce((s, a) => s + grossOf(a), 0)
     rows.push({ code, kind: 'القيمة الأصلية', gl: gl.get(code) ?? 0, mod })
   })
   ;[...new Set(db.classes.map((c) => c.accumAcct).filter(Boolean))].forEach((code) => {
@@ -258,7 +263,7 @@ function Reconciliation() {
           ))}
         </tbody>
       </table>
-      <p className="mt-2 flex items-center gap-1 text-xs text-gray-500"><BarChart3 className="h-3.5 w-3.5" />رصيد الأستاذ = الأرصدة الافتتاحية + فواتير المشتريات + كل قيود الوحدة المُرحّلة.</p>
+      <p className="mt-2 flex items-center gap-1 text-xs text-gray-500"><BarChart3 className="h-3.5 w-3.5" />رصيد الأستاذ = الأرصدة الافتتاحية + فواتير المشتريات + كل قيود الوحدة المُرحّلة (ومنها الصيانة المرسملة).</p>
     </>
   )
 }

@@ -3,7 +3,7 @@ import { can as canRole, type Perm } from './permissions'
 import { seed } from './seed'
 import type { DB } from './types'
 
-const KEY = 'enki-assets-mock-v3'
+const KEY = 'enki-assets-mock-v4'
 
 interface Ctx {
   db: DB

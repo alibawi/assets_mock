@@ -76,3 +76,22 @@
 **Verification:** `npm run build` passes; zero console errors after reload; completed MNT-2026-0005 (journal created, next order MNT-2026-0009 planned for 2027-01-16); created a new order from `?asset=a8` and saved it; asset card tab lists the orders.
 
 **Next step:** owner review of the maintenance fields.
+
+---
+
+## 2026-10-16 — Capitalization option on maintenance orders (owner request)
+
+**Module / screen:** Fixed Assets — maintenance order, asset card, settings, reports.
+
+**Completed**
+- Order field "المعالجة المحاسبية": expense (default) or capitalize onto the asset value. Capitalized orders are one-off (recurrence disabled).
+- On completion of a capitalized order: entry debit asset account / credit suppliers; the cost is added to the asset (`capitalizedCost`, part of gross value); only unposted depreciation lines are regenerated over the remaining life; an Adjustment event is logged on the asset.
+- Rules: capitalization only for running/paused assets and only when cost ≥ the capitalization threshold (default 5,000,000 IQD, editable in الصيانة والترقيم settings by the settings role).
+- Reports: GL reconciliation includes maintenance entries; register-as-of-date includes capitalized costs by completion date. Asset card shows "تكاليف مرسملة"; lists mark capitalized orders.
+- Seed: MNT-2026-0009 — replacement of the main filling unit on FA-000004 (18,000,000, capitalized 2026-09-30).
+
+**Key design decisions (assumptions):** IAS 16 subsequent-cost treatment; threshold value and one-off rule are mock choices for the owner to confirm.
+
+**Verification:** `npm run build` passes; no console errors after reload. Seeded overhaul raised FA-000004's next installment 3,175,949 → 3,646,554 with the 9 posted lines unchanged; GL reconciliation still zero. In the UI, capitalizing MNT-2026-0007 at 950,000 was rejected (below threshold); at 6,000,000 it completed and the next installment went 281,525 → 381,525.
+
+**Next step:** owner review.

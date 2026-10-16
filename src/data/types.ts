@@ -77,6 +77,8 @@ export interface Asset {
   importedAccum: number
   /** Σ revaluation adjustments (±), derived from posted revaluation transactions */
   revaluationAdj: number
+  /** Σ maintenance costs capitalized onto the asset (improvements) */
+  capitalizedCost: number
   costCenterId: string
   project: string
 }
@@ -145,6 +147,7 @@ export interface Maintenance {
   doneDate: string | null
   cost: number
   intervalMonths: number // 0 = one-off; otherwise the next order is scheduled on completion
+  capitalize: boolean // add the cost to the asset value instead of expensing it
   status: MaintStatus
   notes: string
   journal: JournalLine[]
@@ -163,5 +166,7 @@ export interface DB {
   txs: AssetTx[]
   runs: DepRun[]
   maintenance: Maintenance[]
+  /** Minimum maintenance cost that may be capitalized (IQD) */
+  capThreshold: number
   role: RoleId
 }

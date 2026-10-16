@@ -21,7 +21,7 @@ const blank = (): Asset => ({
   id: '', code: '', name: '', description: '', classId: '', groupId: '', locationId: '', custodianId: '', serial: '', tagNumber: '',
   partnerId: '', sourceDocRef: '', acquisitionDate: TODAY, depStartDate: TODAY, originalValue: 0, salvage: 0, lifeMonths: 60,
   method: 'SL', periodicity: 'M', prorata: 'NONE', decliningFactor: null, state: 'draft', isLegacy: false, importedAccum: 0,
-  revaluationAdj: 0, costCenterId: '', project: '',
+  revaluationAdj: 0, capitalizedCost: 0, costCenterId: '', project: '',
 })
 
 export default function AssetForm() {
@@ -238,6 +238,7 @@ export default function AssetForm() {
                 </Field>
                 {a.isLegacy && <Field label="الإهلاك المستورد"><NumInput value={a.importedAccum} disabled={!editable} onChange={(n) => set('importedAccum', n)} /></Field>}
                 <Field label="تعديلات إعادة التقييم"><ReadOnly ltr>{money(a.revaluationAdj)}</ReadOnly></Field>
+                <Field label="تكاليف مرسملة (صيانة)"><ReadOnly ltr>{money(a.capitalizedCost)}</ReadOnly></Field>
                 <Field label="مجمّع الاندثار"><ReadOnly ltr>{money(accum)}</ReadOnly></Field>
                 <Field label="القيمة الدفترية"><ReadOnly ltr><b>{money(nbv)}</b></ReadOnly></Field>
               </FormGrid>
@@ -310,13 +311,13 @@ export default function AssetForm() {
                   <tbody>
                     {maint.map((x) => (
                       <tr key={x.id} className="cursor-pointer" onClick={() => nav(`/maintenance/${x.id}`)}>
-                        <td dir="ltr" className="text-end text-navy">{x.number}</td><td>{maintTypeLabel[x.type]}</td><td>{L.partnerName(x.partnerId)}</td>
+                        <td dir="ltr" className="text-end text-navy">{x.number}</td><td>{maintTypeLabel[x.type]}{x.capitalize && <span className="ms-1.5 rounded bg-sky-50 px-1 text-[10px] text-sky-700">مرسملة</span>}</td><td>{L.partnerName(x.partnerId)}</td>
                         <td dir="ltr" className="text-end">{x.plannedDate}</td><td dir="ltr" className="text-end">{x.doneDate ?? '—'}</td>
                         <td className="num">{money(x.cost)}</td><td><Badge tone={maintStatusTone[x.status]}>{maintStatusLabel[x.status]}</Badge></td>
                       </tr>
                     ))}
                   </tbody>
-                  <tfoot><tr><td colSpan={5}>إجمالي المنجز:</td><td className="num">{money(maint.filter((x) => x.status === 'done').reduce((s, x) => s + x.cost, 0))}</td><td /></tr></tfoot>
+                  <tfoot><tr><td colSpan={5}>إجمالي المنجز (مصروف + مرسمل):</td><td className="num">{money(maint.filter((x) => x.status === 'done').reduce((s, x) => s + x.cost, 0))}</td><td /></tr></tfoot>
                 </table>
               ) : <Empty text="لا توجد أوامر صيانة لهذا الأصل" />}
             </div>

@@ -35,7 +35,7 @@ export const postedSum = (db: DB, assetId: string, asOf?: string) =>
 
 /** Accumulated depreciation booked = imported (legacy) + Σ posted lines. */
 export const accumOf = (db: DB, a: Asset, asOf?: string) => a.importedAccum + postedSum(db, a.id, asOf)
-export const grossOf = (a: Asset) => a.originalValue + a.revaluationAdj
+export const grossOf = (a: Asset) => a.originalValue + a.revaluationAdj + a.capitalizedCost
 /** §1: book value = original − Σ posted − imported ± revaluation. Never stored. */
 export const bookValue = (db: DB, a: Asset, asOf?: string) => grossOf(a) - accumOf(db, a, asOf)
 export const depBase = (a: Asset) => a.originalValue - a.salvage
@@ -53,7 +53,7 @@ export function generateSchedule(db: DB, a: Asset, cls: AssetClass, from?: strin
   const pSum = posted.reduce((s, l) => s + l.amount, 0)
   const mpp = MPP[a.periodicity]
   const total = Math.max(1, Math.round(a.lifeMonths / mpp))
-  let remaining = depBase(a) + a.revaluationAdj - a.importedAccum - pSum
+  let remaining = depBase(a) + a.revaluationAdj + a.capitalizedCost - a.importedAccum - pSum
   const periodsLeft = total - posted.length
   if (!cls.isDepreciable || a.method === 'NONE' || remaining <= 0 || periodsLeft <= 0) return []
 

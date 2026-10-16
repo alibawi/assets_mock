@@ -1,7 +1,7 @@
 // Demo data. Chart-of-accounts codes follow plan §3.9; codes marked "مقترح" are placeholders the
 // accountant still has to approve (plan §12, open decision 1).
 import { bookValue, generateSchedule, monthEnd } from './calc'
-import { capitalize, createRun, dispose, maintJournal, pause, postRun, revalue, sell, transfer } from './lifecycle'
+import { capitalize, completeMaint, createRun, dispose, maintJournal, pause, postRun, revalue, sell, transfer } from './lifecycle'
 import type { Account, Asset, AssetClass, AssetGroup, AssetLocation, CostCenter, DB, Employee, Maintenance, Partner } from './types'
 
 const accounts: Account[] = [
@@ -121,7 +121,7 @@ function buildAssets(): Asset[] {
       partnerId: partner, sourceDocRef: src, acquisitionDate: acq, depStartDate: legacy ? '2026-01-01' : acq,
       originalValue: orig, salvage, lifeMonths: legacy ? legacy[1] : c.lifeMonths, method: c.method, periodicity: c.periodicity,
       prorata: c.prorata, decliningFactor: c.decliningFactor, state: 'draft', isLegacy: !!legacy, importedAccum: legacy ? legacy[0] : 0,
-      revaluationAdj: 0, costCenterId: cc, project: '',
+      revaluationAdj: 0, capitalizedCost: 0, costCenterId: cc, project: '',
     }
   })
 }
@@ -129,7 +129,7 @@ function buildAssets(): Asset[] {
 export function seed(): DB {
   const db: DB = {
     classes, groups, locations, employees, partners, costCenters, accounts,
-    assets: buildAssets(), lines: [], txs: [], runs: [], maintenance: [], role: 'superadmin',
+    assets: buildAssets(), lines: [], txs: [], runs: [], maintenance: [], capThreshold: 5000000, role: 'superadmin',
   }
   db.classes = structuredClone(classes)
 
@@ -185,9 +185,16 @@ function seedMaintenance(db: DB) {
   rows.forEach(([assetId, type, partnerId, plannedDate, cost, intervalMonths, status, notes], i) => {
     const m: Maintenance = {
       id: `m${i + 1}`, number: `MNT-2026-${String(i + 1).padStart(4, '0')}`, assetId, type, partnerId, plannedDate,
-      doneDate: status === 'done' ? plannedDate : null, cost, intervalMonths, status, notes, journal: [],
+      doneDate: status === 'done' ? plannedDate : null, cost, intervalMonths, capitalize: false, status, notes, journal: [],
     }
     if (status === 'done') m.journal = maintJournal(db, m)
     db.maintenance.push(m)
   })
+  // A capitalized overhaul, completed after the September run.
+  db.maintenance.push({
+    id: 'm9', number: 'MNT-2026-0009', assetId: 'a4', type: 'corrective', partnerId: 'p4', plannedDate: '2026-09-20', doneDate: null,
+    cost: 18000000, intervalMonths: 0, capitalize: true, status: 'inProgress', journal: [],
+    notes: 'استبدال وحدة التعبئة الرئيسية بوحدة أحدث — تُطيل العمر وترفع الطاقة الإنتاجية',
+  })
+  completeMaint(db, 'm9', '2026-09-30', 18000000)
 }

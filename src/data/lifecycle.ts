@@ -231,8 +231,15 @@ export const MAINT_EXPENSE_ACCT = '3600000001'
 export function maintJournal(db: DB, m: Maintenance): JournalLine[] {
   if (!m.cost) return []
   const a = db.assets.find((x) => x.id === m.assetId)
-  const d = `صيانة ${a?.code ?? ''} — ${m.number}`
   const cc = db.costCenters.find((c) => c.id === a?.costCenterId)?.name
+  if (m.capitalize && a) {
+    const d = `رسملة صيانة ${a.code} — ${m.number}`
+    return [
+      { account: acc(db, cls(db, a).assetAcct), desc: d, debit: m.cost, credit: 0 },
+      { account: acc(db, SUPPLIER_ACCT), desc: d, debit: 0, credit: m.cost },
+    ]
+  }
+  const d = `صيانة ${a?.code ?? ''} — ${m.number}`
   return [
     { account: acc(db, MAINT_EXPENSE_ACCT), desc: d, debit: m.cost, credit: 0, costCenter: cc },
     { account: acc(db, SUPPLIER_ACCT), desc: d, debit: 0, credit: m.cost },
@@ -246,6 +253,16 @@ export function maintValidate(db: DB, m: Maintenance): string | null {
   if (!m.plannedDate) return 'تاريخ الصيانة المخطط مطلوب'
   if (!m.partnerId) return 'الجهة المنفذة مطلوبة'
   if (m.cost < 0) return 'التكلفة غير صحيحة'
+  if (m.capitalize && a.state !== 'running' && a.state !== 'paused') return 'الرسملة متاحة للأصول قيد الإهلاك أو الموقوفة فقط'
+  return null
+}
+
+/** Rules for capitalizing a maintenance cost (IAS 16 subsequent costs — mock assumption). */
+export function capitalizeError(db: DB, m: Maintenance, cost: number): string | null {
+  if (!m.capitalize) return null
+  const a = db.assets.find((x) => x.id === m.assetId)
+  if (!a || (a.state !== 'running' && a.state !== 'paused')) return 'الرسملة متاحة للأصول قيد الإهلاك أو الموقوفة فقط'
+  if (cost < db.capThreshold) return `لا يمكن رسملة مبلغ أقل من حد الرسملة ${db.capThreshold.toLocaleString('en-US')} — حمّله كمصروف`
   return null
 }
 
@@ -267,14 +284,27 @@ export function completeMaint(db: DB, id: string, doneDate: string, cost: number
   const m = db.maintenance.find((x) => x.id === id)!
   if (m.status !== 'planned' && m.status !== 'inProgress') return 'أمر الصيانة مغلق'
   if (cost <= 0) return 'أدخل التكلفة الفعلية'
+  const capErr = capitalizeError(db, m, cost)
+  if (capErr) return capErr
   m.cost = cost
   m.status = 'done'
   m.doneDate = doneDate
   m.journal = maintJournal(db, m)
+  if (m.capitalize) {
+    // The improvement raises the depreciable base; only unposted lines are regenerated (§3.6).
+    const a = db.assets.find((x) => x.id === m.assetId)!
+    const before = bookValue(db, a)
+    a.capitalizedCost += cost
+    generateSchedule(db, a, cls(db, a))
+    addTx(db, a, 'adjustment', doneDate, {
+      amount: cost, fromValue: before, toValue: before + cost,
+      notes: `رسملة تكلفة صيانة ${m.number} بمبلغ ${cost.toLocaleString('en-US')} — أُعيد توليد الأقساط غير المُرحّلة (القيد في أمر الصيانة)`,
+    })
+  }
   if (m.intervalMonths > 0) {
     db.maintenance.push({
       ...m, id: `m${Date.now().toString(36)}`, number: nextNo('MNT', db.maintenance.map((x) => x.number)),
-      plannedDate: addMonths(doneDate, m.intervalMonths), doneDate: null, status: 'planned', journal: [],
+      plannedDate: addMonths(doneDate, m.intervalMonths), doneDate: null, status: 'planned', journal: [], capitalize: false,
     })
   }
   return null

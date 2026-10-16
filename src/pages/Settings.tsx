@@ -1,7 +1,8 @@
 import { Check, Minus, RotateCcw } from 'lucide-react'
 import { useState } from 'react'
 import { PageHeader } from '../components/Layout'
-import { Card, Confirm } from '../components/ui'
+import { Card, Confirm, Field, NumInput } from '../components/ui'
+import { money } from '../data/format'
 import { roleLabel } from '../data/format'
 import { permLabel, rolePerms, type Perm } from '../data/permissions'
 import { useStore } from '../data/store'
@@ -19,8 +20,9 @@ const docTypes = [
 ]
 
 export default function SettingsPage() {
-  const { db, reset, toast } = useStore()
+  const { db, reset, toast, run, can } = useStore()
   const [ask, setAsk] = useState(false)
+  const [threshold, setThreshold] = useState(db.capThreshold)
   const roles = Object.keys(roleLabel) as RoleId[]
   const perms = Object.keys(permLabel) as Perm[]
 
@@ -51,6 +53,18 @@ export default function SettingsPage() {
             </table>
           </div>
           <p className="px-4 py-2 text-xs text-gray-500">الأدوار تُركَّب من الصلاحيات في شاشة الأدوار ولا تُبرمج كأدوار ثابتة. في النموذج يغيّر تبديل الدور الأزرار المتاحة فقط.</p>
+        </Card>
+
+        <Card title="رسملة تكاليف الصيانة">
+          <div className="flex flex-wrap items-end gap-3">
+            <Field label="حد الرسملة الأدنى (IQD)" hint="أوامر الصيانة الأقل من هذا المبلغ لا يمكن رسملتها وتُحمَّل كمصروف">
+              <div className="w-48"><NumInput value={threshold} disabled={!can('settings')} onChange={setThreshold} /></div>
+            </Field>
+            <button type="button" className="btn btn-primary" disabled={!can('settings') || threshold === db.capThreshold}
+              onClick={() => run((d) => (threshold < 0 ? 'قيمة غير صحيحة' : void (d.capThreshold = threshold)), `حد الرسملة: ${money(threshold)}`)}>
+              حفظ
+            </button>
+          </div>
         </Card>
 
         <Card title="أنواع الوثائق والترقيم" pad={false}>

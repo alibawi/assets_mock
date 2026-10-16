@@ -36,6 +36,7 @@ Run: `Draft (simulation) → Posted → Reversed`.
 | R8 | Reversal creates a reversing entry and returns lines to planned; later runs must be reversed first | `reverseRun` |
 | R9 | Class save rejects missing / non-existent / non-postable accounts | `classAccountErrors` |
 | R10 | Tag number unique when filled | asset form |
+| R12 | Maintenance cost may be capitalized only for running/paused assets and when ≥ capitalization threshold; regenerates unposted lines | `capitalizeError`, `completeMaint` |
 | R11 | After capitalization, value and depreciation settings change only through actions | asset form |
 
 ## 5. Permissions (§6.3)

@@ -5,6 +5,7 @@ import { PageHeader } from '../components/Layout'
 import { ListView } from '../components/ListView'
 import { JournalTable } from '../components/Shared'
 import { Badge, Card, Confirm, Dropdown, Field, FormGrid, Modal, NumInput, ReadOnly, SaveSplit, Select, Tabs } from '../components/ui'
+import { bookValue } from '../data/calc'
 import { iqd, maintStatusLabel, maintStatusTone, maintTypeLabel, money } from '../data/format'
 import { cancelMaint, completeMaint, maintJournal, maintValidate, nextNo, startMaint, TODAY } from '../data/lifecycle'
 import { useLookups } from '../data/lookups'
@@ -67,7 +68,7 @@ export function MaintenanceList() {
       columns={[
         { key: 'n', label: 'رقم الأمر', render: (m) => <span className="font-medium text-navy" dir="ltr">{m.number}</span> },
         { key: 'a', label: 'الأصل', render: (m) => L.assetLabel(m.assetId) },
-        { key: 't', label: 'النوع', render: (m) => maintTypeLabel[m.type] },
+        { key: 't', label: 'النوع', render: (m) => <span>{maintTypeLabel[m.type]}{m.capitalize && <span className="ms-1.5 rounded bg-sky-50 px-1 text-[10px] text-sky-700">مرسملة</span>}</span> },
         { key: 'p', label: 'الجهة المنفذة', render: (m) => L.partnerName(m.partnerId) },
         { key: 'd', label: 'الموعد المخطط', render: (m) => <span dir="ltr" className={isOverdue(m) ? 'font-semibold text-red-600' : ''}>{m.plannedDate}</span> },
         { key: 'r', label: 'التكرار', render: (m) => (m.intervalMonths ? `كل ${m.intervalMonths} أشهر` : 'مرة واحدة') },
@@ -91,7 +92,7 @@ export function MaintenanceForm() {
   const [m, setM] = useState<Maintenance>(() =>
     existing ? structuredClone(existing) : {
       id: '', number: nextNo('MNT', db.maintenance.map((x) => x.number)), assetId: params.get('asset') ?? '', type: 'preventive',
-      partnerId: '', plannedDate: TODAY, doneDate: null, cost: 0, intervalMonths: 0, status: 'planned', notes: '', journal: [],
+      partnerId: '', plannedDate: TODAY, doneDate: null, cost: 0, intervalMonths: 0, capitalize: false, status: 'planned', notes: '', journal: [],
     },
   )
   const [tab, setTab] = useState<T>('details')
@@ -125,7 +126,7 @@ export function MaintenanceForm() {
     if (done && isNew) nav(`/maintenance/${savedId}`, { replace: true })
     return done
   }
-  const save = () => persist(undefined, 'تم حفظ أمر الصيانة')
+  const save = () => persist((d) => (m.capitalize && m.cost > 0 && m.cost < d.capThreshold ? `التكلفة التقديرية أقل من حد الرسملة ${money(d.capThreshold)}` : null), 'تم حفظ أمر الصيانة')
 
   const journal = stored.status === 'done' ? stored.journal : maintJournal(db, m)
 
@@ -161,7 +162,7 @@ export function MaintenanceForm() {
           </>
         }
       />
-      {stored.status === 'done' && <div className="mb-3 rounded-md border border-emerald-200 bg-emerald-50 px-4 py-2.5 text-sm text-emerald-800">أُنجزت الصيانة بتاريخ {stored.doneDate} وسُجّلت تكلفتها كمصروف.{stored.intervalMonths > 0 && ' تمت جدولة الأمر التالي تلقائياً.'}</div>}
+      {stored.status === 'done' && <div className="mb-3 rounded-md border border-emerald-200 bg-emerald-50 px-4 py-2.5 text-sm text-emerald-800">أُنجزت الصيانة بتاريخ {stored.doneDate} و{stored.capitalize ? 'رُسملت تكلفتها على قيمة الأصل وأُعيد حساب الأقساط غير المُرحّلة' : 'سُجّلت تكلفتها كمصروف'}.{stored.intervalMonths > 0 && ' تمت جدولة الأمر التالي تلقائياً.'}</div>}
       {stored.status === 'cancelled' && <div className="mb-3 rounded-md border border-gray-200 bg-gray-50 px-4 py-2.5 text-sm text-gray-600">هذا الأمر ملغى.</div>}
 
       <Card className="mb-4">
@@ -177,10 +178,16 @@ export function MaintenanceForm() {
           <Field label="الموعد المخطط" required><input type="date" className="inp" disabled={!editable} value={m.plannedDate} onChange={(e) => set('plannedDate', e.target.value)} /></Field>
           <Field label="التكلفة التقديرية (IQD)"><NumInput value={m.cost} disabled={!editable} onChange={(n) => set('cost', n)} /></Field>
           <Field label="التكرار">
-            <Select value={String(m.intervalMonths)} disabled={!editable} onChange={(v) => set('intervalMonths', Number(v))}
+            <Select value={String(m.intervalMonths)} disabled={!editable || m.capitalize} onChange={(v) => set('intervalMonths', Number(v))}
               options={[['0', 'مرة واحدة'], ['1', 'شهرياً'], ['3', 'كل 3 أشهر'], ['4', 'كل 4 أشهر'], ['6', 'كل 6 أشهر'], ['12', 'سنوياً']].map(([value, label]) => ({ value, label }))} />
           </Field>
           <Field label="تاريخ الإنجاز"><ReadOnly ltr>{stored.doneDate ?? '—'}</ReadOnly></Field>
+          <Field label="المعالجة المحاسبية" span={2} hint={`حد الرسملة: ${money(db.capThreshold)} — الصيانة الدورية تُحمَّل كمصروف`}>
+            <div className="flex h-8 items-center gap-4 text-sm">
+              <label className="flex items-center gap-1.5"><input type="radio" name="cap" disabled={!editable} checked={!m.capitalize} onChange={() => set('capitalize', false)} />مصروف صيانة</label>
+              <label className="flex items-center gap-1.5"><input type="radio" name="cap" disabled={!editable || !a || (a.state !== 'running' && a.state !== 'paused')} checked={m.capitalize} onChange={() => setM((p) => ({ ...p, capitalize: true, intervalMonths: 0 }))} />رسملة على قيمة الأصل</label>
+            </div>
+          </Field>
           <Field label="وصف العمل" span={5}><input className="inp" disabled={!editable} value={m.notes} onChange={(e) => set('notes', e.target.value)} /></Field>
         </FormGrid>
       </Card>
@@ -217,7 +224,7 @@ export function MaintenanceForm() {
             </div>
           ) : <p className="text-sm text-gray-400">اختر الأصل في رأس الأمر</p>)}
           {tab === 'journal' && (
-            <JournalTable lines={journal} note={stored.status === 'done' ? undefined : 'معاينة القيد الذي يُنشأ عند الإنجاز: مدين مصروف الصيانة (على مركز كلفة الأصل) / دائن الموردون.'} />
+            <JournalTable lines={journal} note={stored.status === 'done' ? undefined : m.capitalize ? 'معاينة القيد عند الإنجاز: مدين حساب الأصل / دائن الموردون — تُضاف التكلفة لقيمة الأصل وتُستهلك مع أقساطه.' : 'معاينة القيد الذي يُنشأ عند الإنجاز: مدين مصروف الصيانة (على مركز كلفة الأصل) / دائن الموردون.'} />
           )}
         </div>
       </div>
@@ -233,7 +240,16 @@ export function MaintenanceForm() {
           <div className="grid grid-cols-2 gap-3">
             <Field label="تاريخ الإنجاز" required><input type="date" className="inp" value={doneDate} onChange={(e) => setDoneDate(e.target.value)} /></Field>
             <Field label="التكلفة الفعلية" required><NumInput value={actual} onChange={setActual} /></Field>
-            <p className="col-span-2 text-xs text-gray-500">تُسجَّل التكلفة كمصروف صيانة.{m.intervalMonths > 0 && ` سيُنشأ أمر جديد بعد ${m.intervalMonths} أشهر من تاريخ الإنجاز.`}</p>
+            {m.capitalize ? (
+              <div className="col-span-2 space-y-1 rounded-md bg-sky-50 p-3 text-xs text-sky-800">
+                <div>• تُضاف التكلفة إلى قيمة الأصل (مدين حساب الأصل / دائن الموردون).</div>
+                <div>• تُعاد حسبة أقساط الإهلاك غير المُرحّلة فقط على العمر المتبقي.</div>
+                <div>• الحد الأدنى للرسملة {money(db.capThreshold)}{actual > 0 && actual < db.capThreshold && <b className="text-red-600"> — المبلغ أقل من الحد</b>}.</div>
+                {a && <div>• القيمة الدفترية بعد الرسملة: {money(bookValue(db, a) + actual)}</div>}
+              </div>
+            ) : (
+              <p className="col-span-2 text-xs text-gray-500">تُسجَّل التكلفة كمصروف صيانة.{m.intervalMonths > 0 && ` سيُنشأ أمر جديد بعد ${m.intervalMonths} أشهر من تاريخ الإنجاز.`}</p>
+            )}
           </div>
         </Modal>
       )}
