@@ -1,28 +1,61 @@
 import {
-  ArrowLeftRight, Barcode, CheckCircle2, CirclePause, CirclePlay, Clock3, FileText, History, Info, MapPin, MoreHorizontal,
-  Paperclip, Plus, Trash2, TrendingDown, TrendingUp, Upload, Wallet, Wrench,
+  ArrowLeftRight, Ban, Barcode, BookOpenCheck, CheckCircle2, CirclePause, CirclePlay, Clock3, FileText, History, Info, Landmark, MapPin,
+  MinusCircle, MoreHorizontal, Paperclip, PenLine, Plus, PlusCircle, Trash2, TrendingDown, TrendingUp, Undo2, Upload, Wallet, Wrench,
 } from 'lucide-react'
 import { useEffect, useMemo, useState } from 'react'
 import { Link, useNavigate, useParams } from 'react-router-dom'
 import { PageHeader } from '../components/Layout'
 import { TxModal, txSummary } from '../components/Shared'
 import { Badge, Card, Confirm, Dropdown, Empty, Field, FormGrid, Modal, NumInput, ReadOnly, SaveSplit, Select, Tabs } from '../components/ui'
-import { accumOf, bookValue, depBase, generateSchedule, MPP } from '../data/calc'
-import { iqd, maintStatusLabel, maintStatusTone, maintTypeLabel, methodLabel, money, periodicityLabel, prorataLabel, stateLabel, stateTone, txLabel, txTone } from '../data/format'
-import { canDelete, capitalize, dispose, nextAssetCode, nextNo, pause, resume, revalue, sell, TODAY, transfer } from '../data/lifecycle'
+import { assetLedger } from '../data/asof'
+import { accumOf, bookValue, depBase, generateSchedule, lifeError, monthsIncl, MPP, periodEndOf, remainingDepreciable } from '../data/calc'
+import {
+  accumWord, depWord, iqd, kindLabel, maintStatusLabel, maintStatusTone, maintTypeLabel, methodLabel, money, periodicityLabel, prorataLabel, stateLabel,
+  stateTone, txLabel, txTone,
+} from '../data/format'
+import {
+  addCost, cancelAsset, canDelete, capitalize, changeLife, costCenterTransfer, defaultCcDate, dispose, exitPreview, impair, lowValueError, manualDepreciation,
+  nextAssetCode, pause, reduceCost, resume, revalue, sell, TODAY, transfer, undoCapitalization,
+} from '../data/lifecycle'
 import { useLookups } from '../data/lookups'
 import { useStore } from '../data/store'
-import type { Asset, AssetTx, DepLine, DepMethod, Periodicity, Prorata } from '../data/types'
+import type { Asset, AssetTx, DB, DepLine, DepMethod, Periodicity, Prorata } from '../data/types'
 
-type Tab = 'general' | 'dep' | 'location' | 'maint' | 'events' | 'files'
-type Action = 'capitalize' | 'pause' | 'resume' | 'revalue' | 'transfer' | 'sell' | 'dispose' | 'life' | 'delete' | 'tag'
+type Tab = 'general' | 'dep' | 'location' | 'ledger' | 'maint' | 'events' | 'files'
+type Action =
+  | 'capitalize' | 'cancel' | 'undo' | 'pause' | 'resume' | 'revalue' | 'impair' | 'addCost' | 'reduceCost' | 'manual' | 'life'
+  | 'transfer' | 'cct' | 'sell' | 'dispose' | 'delete' | 'tag'
 
 const blank = (): Asset => ({
   id: '', code: '', name: '', description: '', classId: '', groupId: '', locationId: '', custodianId: '', serial: '', tagNumber: '',
-  partnerId: '', sourceDocRef: '', acquisitionDate: TODAY, depStartDate: TODAY, originalValue: 0, salvage: 0, lifeMonths: 60,
-  method: 'SL', periodicity: 'M', prorata: 'NONE', decliningFactor: null, state: 'draft', isLegacy: false, importedAccum: 0,
-  revaluationAdj: 0, capitalizedCost: 0, costCenterId: '', project: '',
+  partnerId: '', sourceDocRef: '', sourceDocLine: '', sourceLineSeq: null, acquisitionDate: TODAY, depStartDate: TODAY, originalValue: 0,
+  salvage: 0, lifeMonths: 60, method: 'SL', periodicity: 'M', prorata: 'NONE', decliningFactor: null, capitalizationDate: null, state: 'draft',
+  isLegacy: false, importedAccum: 0, importCutoffDate: null, remainingLifeAtImport: null, revaluationAdj: 0, costCenterId: '', project: '',
 })
+
+const lineType: Record<DepLine['type'], string> = { depreciation: 'قسط', manual: 'يدوي', toDate: 'حتى تاريخ الإخراج' }
+
+/** Draft validation incl. §3.5 legacy rules and §5.1.1 life rule. */
+function draftErrors(db: DB, a: Asset): string | null {
+  const c = db.classes.find((x) => x.id === a.classId)
+  if (a.salvage >= a.originalValue) return 'القيمة التخريدية يجب أن تكون أقل من القيمة الأصلية'
+  if (c && c.isDepreciable && c.kind !== 'lowValue') {
+    const le = lifeError(a.lifeMonths, a.periodicity)
+    if (le) return le
+  }
+  const lv = lowValueError(db, a)
+  if (lv) return lv
+  if (a.tagNumber && db.assets.some((x) => x.id !== a.id && x.tagNumber === a.tagNumber)) return 'رقم الملصق مستخدم لأصل آخر'
+  if (a.isLegacy) {
+    if (!a.importCutoffDate) return 'تاريخ قطع الاستيراد مطلوب للأصل المستورد'
+    if (periodEndOf(a.importCutoffDate, a.periodicity, db.settings.fiscalStartMonth) !== a.importCutoffDate) return 'تاريخ قطع الاستيراد يجب أن يكون نهاية فترة'
+    if (a.remainingLifeAtImport === null || a.remainingLifeAtImport < 0) return 'العمر المتبقي عند الاستيراد إلزامي'
+    if (a.remainingLifeAtImport % MPP[a.periodicity] !== 0) return 'العمر المتبقي يجب أن يكون من مضاعفات أشهر الفترة'
+    if (a.importedAccum > depBase(a)) return 'الإهلاك المستورد أكبر من قاعدة الإهلاك'
+    if (c?.isDepreciable && a.remainingLifeAtImport === 0 && a.originalValue - a.importedAccum > a.salvage) return 'عمر متبقٍّ 0 بينما القيمة الدفترية أعلى من التخريدية'
+  }
+  return null
+}
 
 export default function AssetForm() {
   const { id } = useParams()
@@ -37,15 +70,18 @@ export default function AssetForm() {
   const [action, setAction] = useState<Action | null>(null)
   const [openTx, setOpenTx] = useState<AssetTx | null>(null)
 
-  // Lifecycle actions change the stored asset; refresh the local copy from it.
+  // Actions change the stored asset; refresh the local copy from it.
   useEffect(() => {
     if (existing && existing.state !== 'draft') setA(structuredClone(existing))
+    if (existing && existing.state === 'draft' && a.state !== 'draft') setA(structuredClone(existing))
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [existing])
 
   const draft = a.state === 'draft'
-  const closedOut = a.state === 'sold' || a.state === 'disposed'
+  const final = a.state === 'sold' || a.state === 'disposed' || a.state === 'cancelled'
   const editable = draft && can(isNew ? 'create' : 'update')
   const c = L.cls(a.classId)
+  const dep = depWord(c?.kind)
   const set = <K extends keyof Asset>(k: K, v: Asset[K]) => setA((p) => ({ ...p, [k]: v }))
 
   // Class settings are copied (not referenced) onto the asset — plan §3.5.
@@ -54,6 +90,7 @@ export default function AssetForm() {
     if (!k) return
     setA((p) => ({ ...p, classId: cid, method: k.method, lifeMonths: k.lifeMonths, periodicity: k.periodicity, prorata: k.prorata, decliningFactor: k.decliningFactor }))
   }
+  const suggestedRemaining = a.importCutoffDate ? Math.max(0, a.lifeMonths - monthsIncl(a.depStartDate, a.importCutoffDate)) : null
 
   const validate = () => {
     const e: string[] = []
@@ -67,9 +104,8 @@ export default function AssetForm() {
     if (a.originalValue <= 0) e.push('القيمة الأصلية')
     setErrors(e)
     if (e.length) { toast('يرجى إكمال الحقول الإلزامية', 'err'); return false }
-    if (a.salvage >= a.originalValue) { toast('القيمة التخريدية يجب أن تكون أقل من القيمة الأصلية', 'err'); return false }
-    if (c?.isDepreciable && a.method !== 'NONE' && a.lifeMonths <= 0) { toast('العمر الإنتاجي مطلوب', 'err'); return false }
-    if (a.tagNumber && db.assets.some((x) => x.id !== a.id && x.tagNumber === a.tagNumber)) { toast('رقم الملصق مستخدم لأصل آخر', 'err'); return false }
+    const de = draftErrors(db, a)
+    if (de) { toast(de, 'err'); return false }
     return true
   }
 
@@ -82,7 +118,7 @@ export default function AssetForm() {
         d.assets.push({ ...a, id: savedId, code: nextAssetCode(d) })
       } else {
         const i = d.assets.findIndex((x) => x.id === a.id)
-        // After capitalization only descriptive fields are editable.
+        // After capitalization only descriptive fields are editable (§5.5 — no direct cost-center edit).
         d.assets[i] = draft ? a : { ...d.assets[i], description: a.description, serial: a.serial, tagNumber: a.tagNumber, project: a.project }
       }
     }, isNew ? 'تم إنشاء الأصل بحالة مسودة' : 'تم حفظ التعديلات')
@@ -94,57 +130,65 @@ export default function AssetForm() {
   const accum = existing ? accumOf(db, a) : a.importedAccum
   const nbv = existing ? bookValue(db, a) : a.originalValue - a.importedAccum
   const txs = db.txs.filter((t) => t.assetId === a.id).sort((x, y) => y.date.localeCompare(x.date) || y.number.localeCompare(x.number))
+  const exitTx = txs.find((t) => (t.type === 'sale' || t.type === 'disposal') && !t.isReversed)
+  const cctHistory = txs.filter((t) => t.type === 'costCenterTransfer').reverse()
 
-  // Depreciation board: real lines once capitalized, otherwise a preview computed on a scratch copy.
   const board: DepLine[] = useMemo(() => {
-    if (!draft) return db.lines.filter((l) => l.assetId === a.id).sort((x, y) => x.seq - y.seq)
+    if (!draft) return db.lines.filter((l) => l.assetId === a.id).sort((x, y) => x.date.localeCompare(y.date) || x.seq - y.seq)
     const k = db.classes.find((x) => x.id === a.classId)
     if (!k || a.originalValue <= 0) return []
     return generateSchedule({ ...db, lines: [] }, a, k)
   }, [db, a, draft])
-  const maint = db.maintenance.filter((x) => x.assetId === a.id).sort((x, y) => y.plannedDate.localeCompare(x.plannedDate))
   const runNo = (rid: string | null) => db.runs.find((r) => r.id === rid)?.number
+  const maint = db.maintenance.filter((x) => x.assetId === a.id).sort((x, y) => y.plannedDate.localeCompare(x.plannedDate))
 
   const err = (f: string) => (errors.includes(f) ? 'ring-1 ring-red-400 rounded-md' : '')
   const active = a.state === 'running' || a.state === 'paused'
+  const booked = active || a.state === 'closed'
   const methods = (Object.keys(methodLabel) as DepMethod[]).map((k) => ({ value: k, label: methodLabel[k] }))
+
+  const items = draft
+    ? [
+        { label: 'إلغاء الأصل', icon: Ban, onClick: () => setAction('cancel'), disabled: isNew || !can('update') },
+        { label: 'طباعة ملصق الأصل', icon: Barcode, onClick: () => setAction('tag') },
+        { label: 'حذف', icon: Trash2, danger: true, onClick: () => setAction('delete'), disabled: !!canDelete(db, a) || !can('delete') },
+      ]
+    : final
+      ? [
+          ...(exitTx ? [{ label: exitTx.type === 'sale' ? 'عكس البيع' : 'عكس الاستبعاد', icon: Undo2, onClick: () => setOpenTx(exitTx), disabled: !can('reverse') }] : []),
+          { label: 'طباعة ملصق الأصل', icon: Barcode, onClick: () => setAction('tag') },
+        ]
+      : [
+          { label: 'إيقاف الإهلاك', icon: CirclePause, onClick: () => setAction('pause'), disabled: a.state !== 'running' || !can('post') },
+          { label: 'استئناف الإهلاك', icon: CirclePlay, onClick: () => setAction('resume'), disabled: a.state !== 'paused' || !can('post') },
+          { label: 'تراجع عن الرسملة', icon: Undo2, onClick: () => setAction('undo'), disabled: a.state !== 'running' || !can('reverse') },
+          { label: 'إعادة تقييم (زيادة)', icon: TrendingUp, onClick: () => setAction('revalue'), disabled: !booked || !can('post') },
+          { label: 'هبوط قيمة', icon: TrendingDown, onClick: () => setAction('impair'), disabled: !active || !can('post') },
+          { label: 'إضافة لاحقة (AddCost)', icon: PlusCircle, onClick: () => setAction('addCost'), disabled: !booked || !can('post') },
+          { label: 'تخفيض اقتناء (ReduceCost)', icon: MinusCircle, onClick: () => setAction('reduceCost'), disabled: !active || !can('post') },
+          { label: `${dep} اليدوي`, icon: PenLine, onClick: () => setAction('manual'), disabled: !active || !can('post') || !c?.isDepreciable || c.kind === 'land' },
+          { label: 'تعديل العمر الإنتاجي', icon: Clock3, onClick: () => setAction('life'), disabled: !booked || !can('post') || !c?.isDepreciable || c.kind === 'lowValue' },
+          { label: 'نقل موقع / عهدة', icon: ArrowLeftRight, onClick: () => setAction('transfer'), disabled: !booked || !can('update') },
+          { label: 'نقل مركز الكلفة', icon: Landmark, onClick: () => setAction('cct'), disabled: !booked || !can('update') },
+          { label: 'بيع', icon: Wallet, onClick: () => setAction('sell'), disabled: !booked || !can('post') },
+          { label: 'استبعاد بلا مقابل', icon: Trash2, onClick: () => setAction('dispose'), disabled: !booked || !can('post') },
+          { label: 'أمر صيانة جديد', icon: Wrench, onClick: () => nav(`/maintenance/new?asset=${a.id}`), disabled: !can('create') },
+          { label: 'طباعة ملصق الأصل', icon: Barcode, onClick: () => setAction('tag') },
+        ]
 
   return (
     <div>
       <PageHeader
         crumbs={[{ label: 'سجل الأصول', to: '/assets' }, { label: isNew ? 'أصل جديد' : a.code }]}
         title={isNew ? 'أصل جديد' : a.name}
-        badge={<><Badge tone={stateTone[a.state]}>{stateLabel[a.state]}</Badge>{a.isLegacy && <Badge tone="gray">مستورد (Legacy)</Badge>}</>}
+        badge={<><Badge tone={stateTone[a.state]}>{stateLabel[a.state]}</Badge>{a.isLegacy && <Badge tone="gray">مستورد (Legacy)</Badge>}{c && c.kind !== 'tangible' && <Badge tone="blue">{kindLabel[c.kind]}</Badge>}</>}
         summary={{ label: 'القيمة الدفترية', value: iqd(nbv) }}
         actions={
           <>
-            <SaveSplit
-              disabled={!can(isNew ? 'create' : 'update') || closedOut}
-              onSave={() => save()}
-              items={[{ label: 'حفظ وإنشاء جديد', onClick: () => save(true) }]}
-            />
-            {draft && !isNew && can('post') && (
-              <button type="button" className="btn" onClick={() => setAction('capitalize')}><CheckCircle2 className="h-4 w-4" />رسملة</button>
-            )}
+            <SaveSplit disabled={!can(isNew ? 'create' : 'update') || final} onSave={() => save()} items={[{ label: 'حفظ وإنشاء جديد', onClick: () => save(true) }]} />
+            {draft && !isNew && can('post') && <button type="button" className="btn" onClick={() => setAction('capitalize')}><CheckCircle2 className="h-4 w-4" />رسملة</button>}
             <button type="button" className="btn" onClick={() => nav('/assets')}>إلغاء</button>
-            {!isNew && (
-              <Dropdown
-                label="إجراءات"
-                icon={MoreHorizontal}
-                items={[
-                  { label: 'إيقاف الإهلاك', icon: CirclePause, onClick: () => setAction('pause'), disabled: a.state !== 'running' || !can('post') },
-                  { label: 'استئناف الإهلاك', icon: CirclePlay, onClick: () => setAction('resume'), disabled: a.state !== 'paused' || !can('post') },
-                  { label: 'إعادة تقييم', icon: TrendingUp, onClick: () => setAction('revalue'), disabled: !active || !can('post') },
-                  { label: 'تعديل العمر الإنتاجي', icon: Clock3, onClick: () => setAction('life'), disabled: !active || !can('post') || !c?.isDepreciable },
-                  { label: 'نقل (موقع / عهدة / مركز كلفة)', icon: ArrowLeftRight, onClick: () => setAction('transfer'), disabled: !active || !can('update') },
-                  { label: 'بيع', icon: Wallet, onClick: () => setAction('sell'), disabled: !active || !can('post') },
-                  { label: 'استبعاد بلا مقابل', icon: Trash2, onClick: () => setAction('dispose'), disabled: !(active || a.state === 'closed') || !can('post') },
-                  { label: 'أمر صيانة جديد', icon: Wrench, onClick: () => nav(`/maintenance/new?asset=${a.id}`), disabled: !(active || a.state === 'closed') || !can('create') },
-                  { label: 'طباعة ملصق الأصل', icon: Barcode, onClick: () => setAction('tag') },
-                  { label: 'حذف', icon: Trash2, danger: true, onClick: () => setAction('delete'), disabled: !!canDelete(db, a) || !can('delete') },
-                ]}
-              />
-            )}
+            {!isNew && <Dropdown label="إجراءات" icon={MoreHorizontal} items={items} />}
           </>
         }
       />
@@ -152,9 +196,9 @@ export default function AssetForm() {
       {errors.length > 0 && <div className="mb-3 rounded-md border border-red-200 bg-red-50 px-4 py-2.5 text-sm text-red-700">الحقول التالية مطلوبة: {errors.join('، ')}</div>}
       {!draft && (
         <div className="mb-3 rounded-md border border-sky-200 bg-sky-50 px-4 py-2.5 text-sm text-sky-800">
-          {closedOut
-            ? `هذا الأصل ${stateLabel[a.state]} — السجل للقراءة فقط.`
-            : 'بعد الرسملة لا تُعدَّل القيمة أو إعدادات الإهلاك مباشرة؛ استخدم «إجراءات» (إعادة تقييم، نقل، تعديل العمر...) ليُسجَّل الحدث ويُعاد توليد الأقساط غير المُرحّلة فقط.'}
+          {final
+            ? `هذا الأصل ${stateLabel[a.state]} — حالة نهائية، السجل للقراءة فقط${a.state !== 'cancelled' ? ' (يمكن عكس البيع / الاستبعاد من «إجراءات»)' : ''}.`
+            : 'بعد الرسملة لا تُعدَّل القيمة أو إعدادات الإهلاك أو مركز الكلفة مباشرة؛ استخدم «إجراءات» ليُسجَّل الحدث بتاريخه الفعلي ويُعاد توليد الأقساط غير المُرحّلة فقط.'}
         </div>
       )}
 
@@ -177,8 +221,9 @@ export default function AssetForm() {
           onChange={setTab}
           tabs={[
             { id: 'general', label: 'البيانات الأساسية', icon: Info },
-            { id: 'dep', label: 'القيمة وجدول الإهلاك', icon: TrendingDown, count: board.length || undefined },
+            { id: 'dep', label: `القيمة وجدول ${dep}`, icon: TrendingDown, count: board.length || undefined },
             { id: 'location', label: 'الموقع والعهدة', icon: MapPin },
+            { id: 'ledger', label: 'بطاقة الأصل', icon: BookOpenCheck },
             { id: 'maint', label: 'الصيانة', icon: Wrench, count: maint.length || undefined },
             { id: 'events', label: 'سجل الأحداث', icon: History, count: txs.length },
             { id: 'files', label: 'المرفقات', icon: Paperclip },
@@ -193,131 +238,166 @@ export default function AssetForm() {
               <Field label="تاريخ بدء الإهلاك (دخول الخدمة)" required>
                 <input type="date" className={`inp ${err('تاريخ بدء الإهلاك')}`} value={a.depStartDate} disabled={!editable} onChange={(e) => set('depStartDate', e.target.value)} />
               </Field>
+              <Field label="تاريخ الرسملة"><ReadOnly ltr>{a.capitalizationDate ?? '—'}</ReadOnly></Field>
               <Field label="المورّد"><Select value={a.partnerId} onChange={(v) => set('partnerId', v)} options={L.partnerOptions} placeholder="—" disabled={!editable} /></Field>
               <Field label="مرجع وثيقة الشراء" hint="مع فاتورة مشتريات مُرحّلة لا يُنشأ قيد رسملة">
                 <input className="inp" dir="ltr" placeholder="PB-2026-0000" value={a.sourceDocRef} disabled={!editable} onChange={(e) => set('sourceDocRef', e.target.value)} />
               </Field>
-              <Field label="المشروع"><input className="inp" value={a.project} disabled={closedOut} onChange={(e) => set('project', e.target.value)} /></Field>
-              <Field label="الرقم التسلسلي"><input className="inp" dir="ltr" value={a.serial} disabled={closedOut} onChange={(e) => set('serial', e.target.value)} /></Field>
-              <Field label="رقم الملصق (Tag)" hint="فريد إن أُدخل"><input className="inp" dir="ltr" value={a.tagNumber} disabled={closedOut} onChange={(e) => set('tagNumber', e.target.value)} /></Field>
+              <Field label="سطر الفاتورة / التسلسل" hint="§5.6.6"><ReadOnly ltr>{a.sourceDocLine ? `${a.sourceDocLine}${a.sourceLineSeq ? ` · ${a.sourceLineSeq}` : ''}` : '—'}</ReadOnly></Field>
+              <Field label="المشروع"><input className="inp" value={a.project} disabled={final} onChange={(e) => set('project', e.target.value)} /></Field>
+              <Field label="الرقم التسلسلي"><input className="inp" dir="ltr" value={a.serial} disabled={final} onChange={(e) => set('serial', e.target.value)} /></Field>
+              <Field label="رقم الملصق (Tag)" hint="فريد إن أُدخل"><input className="inp" dir="ltr" value={a.tagNumber} disabled={final} onChange={(e) => set('tagNumber', e.target.value)} /></Field>
               <Field label="العملة"><ReadOnly>IQD — عملة النظام</ReadOnly></Field>
-              <Field label="الوصف" span={2}>
-                <input className="inp" value={a.description} disabled={closedOut} onChange={(e) => set('description', e.target.value)} />
-              </Field>
+              <Field label="الوصف" span={5}><input className="inp" value={a.description} disabled={final} onChange={(e) => set('description', e.target.value)} /></Field>
             </FormGrid>
           )}
 
           {tab === 'dep' && (
             <div className="space-y-4">
               <FormGrid>
-                <Field label="القيمة الأصلية (IQD)" required>
+                <Field label="القيمة الأصلية (IQD)" required hint="تتغيّر فقط بالإضافة اللاحقة أو تخفيض الاقتناء">
                   <div className={err('القيمة الأصلية')}><NumInput value={a.originalValue} disabled={!editable} onChange={(n) => set('originalValue', n)} /></div>
                 </Field>
                 <Field label="القيمة التخريدية"><NumInput value={a.salvage} disabled={!editable} onChange={(n) => set('salvage', n)} /></Field>
-                <Field label="قاعدة الإهلاك" hint="القيمة الأصلية − التخريدية"><ReadOnly ltr>{money(depBase(a))}</ReadOnly></Field>
-                <Field label="طريقة الإهلاك" hint="مُورَّثة من الفئة وقابلة للتجاوز">
-                  <Select value={a.method} onChange={(v) => set('method', v)} options={methods} disabled={!editable || !c?.isDepreciable} />
+                <Field label={`قاعدة ${dep}`} hint="القيمة الأصلية − التخريدية"><ReadOnly ltr>{money(depBase(a))}</ReadOnly></Field>
+                <Field label={`طريقة ${dep}`} hint="مُورَّثة من الفئة وقابلة للتجاوز">
+                  <Select value={a.method} onChange={(v) => set('method', v)} options={methods} disabled={!editable || !c?.isDepreciable || c.kind === 'lowValue'} />
                 </Field>
-                <Field label={a.isLegacy ? 'العمر المتبقي (شهر)' : 'العمر الإنتاجي (شهر)'} required>
-                  <NumInput value={a.lifeMonths} disabled={!editable || !c?.isDepreciable} onChange={(n) => set('lifeMonths', n)} />
+                <Field label="العمر الإنتاجي (شهر)" required hint={`من مضاعفات ${MPP[a.periodicity]} أشهر`}>
+                  <NumInput value={a.lifeMonths} disabled={!editable || !c?.isDepreciable || c.kind === 'lowValue'} onChange={(n) => set('lifeMonths', n)} />
                 </Field>
-                <Field label="الدورية">
+                <Field label="الدورية" hint="حدود الفترات بالتقويم المالي">
                   <Select<Periodicity> value={a.periodicity} onChange={(v) => set('periodicity', v)} options={(Object.keys(periodicityLabel) as Periodicity[]).map((k) => ({ value: k, label: periodicityLabel[k] }))} disabled={!editable || !c?.isDepreciable} />
                 </Field>
-                <Field label="التحاصص للقسط الأول">
+                <Field label="التحاصص (البدء والإخراج)">
                   <Select<Prorata> value={a.prorata} onChange={(v) => set('prorata', v)} options={(Object.keys(prorataLabel) as Prorata[]).map((k) => ({ value: k, label: prorataLabel[k] }))} disabled={!editable || !c?.isDepreciable} />
                 </Field>
                 {(a.method === 'DB' || a.method === 'DBSL') && (
                   <Field label="معامل التناقص"><NumInput value={a.decliningFactor ?? 2} disabled={!editable} onChange={(n) => set('decliningFactor', n)} /></Field>
                 )}
+                <Field label="مجال الإهلاك"><ReadOnly>01 — Local GAAP</ReadOnly></Field>
                 <Field label="أصل مستورد (رصيد افتتاحي)">
                   <label className="flex h-8 items-center gap-2 text-sm">
-                    <input type="checkbox" checked={a.isLegacy} disabled={!editable} onChange={(e) => set('isLegacy', e.target.checked)} />
+                    <input type="checkbox" checked={a.isLegacy} disabled={!editable} onChange={(e) => setA((p) => ({ ...p, isLegacy: e.target.checked, importCutoffDate: e.target.checked ? p.importCutoffDate ?? '2025-12-31' : null, remainingLifeAtImport: e.target.checked ? p.remainingLifeAtImport : null }))} />
                     مستورد من النظام السابق
                   </label>
                 </Field>
-                {a.isLegacy && <Field label="الإهلاك المستورد"><NumInput value={a.importedAccum} disabled={!editable} onChange={(n) => set('importedAccum', n)} /></Field>}
-                <Field label="تعديلات إعادة التقييم"><ReadOnly ltr>{money(a.revaluationAdj)}</ReadOnly></Field>
-                <Field label="تكاليف مرسملة (صيانة)"><ReadOnly ltr>{money(a.capitalizedCost)}</ReadOnly></Field>
-                <Field label="مجمّع الاندثار"><ReadOnly ltr>{money(accum)}</ReadOnly></Field>
-                <Field label="القيمة الدفترية"><ReadOnly ltr><b>{money(nbv)}</b></ReadOnly></Field>
+                {a.isLegacy && (
+                  <>
+                    <Field label="تاريخ قطع الاستيراد" required hint="نهاية فترة — أول قسط في الفترة التالية">
+                      <input type="date" className="inp" value={a.importCutoffDate ?? ''} disabled={!editable} onChange={(e) => set('importCutoffDate', e.target.value)} />
+                    </Field>
+                    <Field label="الإهلاك المستورد" required><NumInput value={a.importedAccum} disabled={!editable} onChange={(n) => set('importedAccum', n)} /></Field>
+                    <Field label="العمر المتبقي عند الاستيراد (شهر)" required hint={suggestedRemaining !== null ? `المقترح: ${suggestedRemaining} = العمر − الأشهر حتى القطع` : undefined}>
+                      <div className="flex gap-1">
+                        <NumInput value={a.remainingLifeAtImport ?? 0} disabled={!editable} onChange={(n) => set('remainingLifeAtImport', n)} />
+                        {editable && suggestedRemaining !== null && <button type="button" className="btn shrink-0 px-2 text-xs" onClick={() => set('remainingLifeAtImport', suggestedRemaining)}>المقترح</button>}
+                      </div>
+                    </Field>
+                  </>
+                )}
+                <Field label="إعادة تقييم / هبوط قيمة"><ReadOnly ltr>{money(a.revaluationAdj)}</ReadOnly></Field>
+                <Field label={accumWord(c?.kind)}><ReadOnly ltr>{money(accum)}</ReadOnly></Field>
+                <Field label="القيمة الدفترية" hint="التخريدية لا تُخصم"><ReadOnly ltr><b>{money(nbv)}</b></ReadOnly></Field>
+                <Field label="المتبقي القابل للإهلاك"><ReadOnly ltr>{existing ? money(remainingDepreciable(db, a)) : '—'}</ReadOnly></Field>
               </FormGrid>
-              {c && !c.isDepreciable && <div className="rounded-md bg-gray-50 px-3 py-2 text-xs text-gray-600">فئة «{c.name}» غير قابلة للإهلاك — الجدول فارغ والقيمة الدفترية تساوي القيمة الأصلية إلا بإعادة تقييم.</div>}
+              {c && c.kind === 'land' && <div className="rounded-md bg-gray-50 px-3 py-2 text-xs text-gray-600">فئة «{c.name}» أرض — غير قابلة للإهلاك؛ الجدول فارغ والقيمة الدفترية تساوي القيمة الأصلية إلا بإعادة تقييم.</div>}
+              {c && c.kind === 'lowValue' && <div className="rounded-md bg-amber-50 px-3 py-2 text-xs text-amber-800">أصل منخفض القيمة (§5.6.5): سطر واحد بـ 100% من القاعدة بنهاية فترة دخول الخدمة، فتحمّله أول دورة مصروفاً؛ ويبقى الأصل في السجل والجرد حتى الاستبعاد.{db.settings.lowValueThreshold !== null ? ` الحد الأقصى: ${money(db.settings.lowValueThreshold)}.` : ' حدّ القيمة معطّل.'}</div>}
 
               <div className="rounded-md border border-line">
                 <div className="flex items-center justify-between border-b border-line px-3 py-2">
-                  <span className="text-sm font-semibold">جدول الإهلاك {draft && <span className="ms-1 text-xs font-normal text-amber-600">(معاينة — يُولَّد فعلياً عند الرسملة)</span>}</span>
-                  <span className="text-xs text-gray-500">
-                    {board.length} قسط — {methodLabel[a.method]} — {periodicityLabel[a.periodicity]} · مُرحّل {board.filter((l) => l.isPosted).length}
-                  </span>
+                  <span className="text-sm font-semibold">جدول {dep} {draft && <span className="ms-1 text-xs font-normal text-amber-600">(معاينة — يُولَّد فعلياً عند الرسملة)</span>}</span>
+                  <span className="text-xs text-gray-500">{board.length} سطر — {methodLabel[a.method]} — {periodicityLabel[a.periodicity]} · مُرحّل {board.filter((l) => l.isPosted).length}</span>
                 </div>
                 <div className="max-h-96 overflow-y-auto">
                   <table className="tbl">
                     <thead className="sticky top-0">
-                      <tr><th>#</th><th>تاريخ القسط</th><th className="!text-end">القسط</th><th className="!text-end">المجمّع</th><th className="!text-end">المتبقي للإهلاك</th><th>الحالة</th><th>الدورة</th></tr>
+                      <tr><th>#</th><th>التاريخ</th><th>النوع</th><th>النسبة</th><th className="!text-end">القسط</th><th className="!text-end">المجمّع</th><th className="!text-end">المتبقي</th><th>الحالة</th><th>المرجع</th></tr>
                     </thead>
                     <tbody>
                       {board.map((l) => (
                         <tr key={l.id} className={l.isPosted ? 'bg-emerald-50/40' : ''}>
                           <td className="text-gray-400">{l.seq}</td>
-                          <td dir="ltr" className="text-end">{l.date}{l.days ? <span className="ms-1 text-[11px] text-gray-400">({l.days} يوم)</span> : null}</td>
+                          <td dir="ltr" className="text-end">{l.date}</td>
+                          <td className="text-xs">{l.type === 'depreciation' && l.fraction === null ? 'سطر إتمام' : lineType[l.type]}</td>
+                          <td className="text-xs text-gray-500">{l.days ? `${l.days} يوم` : l.fraction !== null && l.fraction > 0 && l.fraction < 1 ? `${Math.round(l.fraction * 100)}%` : ''}</td>
                           <td className="num">{money(l.amount)}</td>
                           <td className="num">{money(l.accum)}</td>
                           <td className="num">{money(l.remaining)}</td>
                           <td>{l.isPosted ? <Badge tone="green">مُرحّل</Badge> : <Badge tone="gray">مخطَّط</Badge>}</td>
-                          <td dir="ltr" className="text-end text-navy">{l.runId && <Link to={`/runs/${l.runId}`}>{runNo(l.runId)}</Link>}</td>
+                          <td dir="ltr" className="text-end text-navy">
+                            {l.runId && <Link to={`/runs/${l.runId}`}>{runNo(l.runId)}</Link>}
+                            {l.txId && <button type="button" className="hover:underline" onClick={() => setOpenTx(db.txs.find((t) => t.id === l.txId) ?? null)}>{db.txs.find((t) => t.id === l.txId)?.number}</button>}
+                          </td>
                         </tr>
                       ))}
                     </tbody>
-                    {board.length > 0 && (
-                      <tfoot><tr><td colSpan={2}>المجموع:</td><td className="num">{money(board.reduce((s, l) => s + l.amount, 0))}</td><td colSpan={4} /></tr></tfoot>
-                    )}
+                    {board.length > 0 && <tfoot><tr><td colSpan={4}>المجموع:</td><td className="num">{money(board.reduce((s, l) => s + l.amount, 0))}</td><td colSpan={4} /></tr></tfoot>}
                   </table>
-                  {board.length === 0 && <Empty text={c?.isDepreciable === false ? 'لا أقساط — فئة غير قابلة للإهلاك' : closedOut ? 'أُلغيت الأقساط غير المُرحّلة عند الإغلاق' : 'أدخل الفئة والقيمة الأصلية لعرض الجدول'} />}
+                  {board.length === 0 && <Empty text={c?.kind === 'land' ? 'لا أقساط — أرض' : final ? 'أُلغيت الأقساط غير المُرحّلة عند الإغلاق' : 'أدخل الفئة والقيمة الأصلية لعرض الجدول'} />}
                 </div>
               </div>
             </div>
           )}
 
           {tab === 'location' && (
-            <FormGrid>
-              <Field label="الموقع" required>
-                <div className={err('الموقع')}><Select value={a.locationId} onChange={(v) => set('locationId', v)} options={L.locOptions} placeholder="اختر الموقع" disabled={!editable} /></div>
-              </Field>
-              <Field label="صاحب العهدة" required>
-                <div className={err('صاحب العهدة')}><Select value={a.custodianId} onChange={(v) => set('custodianId', v)} options={L.empOptions} placeholder="اختر الموظف" disabled={!editable} /></div>
-              </Field>
-              <Field label="القسم"><ReadOnly>{L.emp(a.custodianId)?.department ?? '—'}</ReadOnly></Field>
-              <Field label="مركز الكلفة" required hint="يُمرَّر إلى سطر قيد الإهلاك">
-                <div className={err('مركز الكلفة')}><Select value={a.costCenterId} onChange={(v) => set('costCenterId', v)} options={L.ccOptions} placeholder="اختر" disabled={!editable} /></div>
-              </Field>
-              <Field label="المسار"><ReadOnly>{L.locPath(a.locationId)}</ReadOnly></Field>
-              {!draft && active && (
-                <div className="rounded-md bg-navy-50 px-3 py-2 text-xs text-navy md:col-span-5">
-                  لتغيير الموقع أو العهدة أو مركز الكلفة استخدم الإجراء <button type="button" className="font-semibold underline" onClick={() => setAction('transfer')}>نقل</button> ليُسجَّل في سجل الأحداث.
+            <div className="space-y-4">
+              <FormGrid>
+                <Field label="الموقع" required>
+                  <div className={err('الموقع')}><Select value={a.locationId} onChange={(v) => set('locationId', v)} options={L.locOptions} placeholder="اختر الموقع" disabled={!editable} /></div>
+                </Field>
+                <Field label="صاحب العهدة" required>
+                  <div className={err('صاحب العهدة')}><Select value={a.custodianId} onChange={(v) => set('custodianId', v)} options={L.empOptions} placeholder="اختر الموظف" disabled={!editable} /></div>
+                </Field>
+                <Field label="القسم"><ReadOnly>{L.emp(a.custodianId)?.department ?? '—'}</ReadOnly></Field>
+                <Field label="مركز الكلفة الحالي" required hint="يُغيَّر بعد الرسملة عبر «نقل مركز الكلفة» فقط">
+                  <div className={err('مركز الكلفة')}><Select value={a.costCenterId} onChange={(v) => set('costCenterId', v)} options={L.ccOptions} placeholder="اختر" disabled={!editable} /></div>
+                </Field>
+                <Field label="المسار"><ReadOnly>{L.locPath(a.locationId)}</ReadOnly></Field>
+              </FormGrid>
+              {!draft && booked && (
+                <div className="flex flex-wrap gap-2">
+                  <button type="button" className="btn" onClick={() => setAction('transfer')}><ArrowLeftRight className="h-4 w-4" />نقل موقع / عهدة</button>
+                  <button type="button" className="btn" onClick={() => setAction('cct')}><Landmark className="h-4 w-4" />نقل مركز الكلفة</button>
                 </div>
               )}
-            </FormGrid>
+              {cctHistory.length > 0 && (
+                <div>
+                  <h4 className="mb-2 text-sm font-semibold">سجل مراكز الكلفة (بتاريخ السريان)</h4>
+                  <table className="tbl">
+                    <thead><tr><th>تاريخ السريان</th><th>من</th><th>إلى</th><th>الحركة</th><th>الحالة</th></tr></thead>
+                    <tbody>
+                      {cctHistory.map((t) => (
+                        <tr key={t.id} className="cursor-pointer" onClick={() => setOpenTx(t)}>
+                          <td dir="ltr" className="text-end">{t.date}</td><td>{L.ccName(t.fromCostCenterId ?? '')}</td><td>{L.ccName(t.toCostCenterId ?? '')}</td>
+                          <td dir="ltr" className="text-end text-navy">{t.number}</td><td>{t.isReversed ? <Badge tone="amber">معكوس</Badge> : <Badge tone="green">ساري</Badge>}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </div>
           )}
+
+          {tab === 'ledger' && (existing ? <LedgerTab asset={existing} onOpen={(t) => setOpenTx(t)} /> : <Empty text="احفظ الأصل أولاً" />)}
 
           {tab === 'maint' && (
             <div>
-              {(active || a.state === 'closed') && can('create') && (
-                <div className="mb-3"><button type="button" className="btn btn-primary" onClick={() => nav(`/maintenance/new?asset=${a.id}`)}><Plus className="h-4 w-4" />أمر صيانة</button></div>
-              )}
+              {booked && can('create') && <div className="mb-3"><button type="button" className="btn btn-primary" onClick={() => nav(`/maintenance/new?asset=${a.id}`)}><Plus className="h-4 w-4" />أمر صيانة</button></div>}
               {maint.length ? (
                 <table className="tbl">
                   <thead><tr><th>رقم الأمر</th><th>النوع</th><th>الجهة المنفذة</th><th>الموعد</th><th>الإنجاز</th><th className="!text-end">التكلفة</th><th>الحالة</th></tr></thead>
                   <tbody>
                     {maint.map((x) => (
                       <tr key={x.id} className="cursor-pointer" onClick={() => nav(`/maintenance/${x.id}`)}>
-                        <td dir="ltr" className="text-end text-navy">{x.number}</td><td>{maintTypeLabel[x.type]}{x.capitalize && <span className="ms-1.5 rounded bg-sky-50 px-1 text-[10px] text-sky-700">مرسملة</span>}</td><td>{L.partnerName(x.partnerId)}</td>
-                        <td dir="ltr" className="text-end">{x.plannedDate}</td><td dir="ltr" className="text-end">{x.doneDate ?? '—'}</td>
+                        <td dir="ltr" className="text-end text-navy">{x.number}</td>
+                        <td>{maintTypeLabel[x.type]}{x.capitalize && <span className="ms-1.5 rounded bg-sky-50 px-1 text-[10px] text-sky-700">مرسملة</span>}</td>
+                        <td>{L.partnerName(x.partnerId)}</td><td dir="ltr" className="text-end">{x.plannedDate}</td><td dir="ltr" className="text-end">{x.doneDate ?? '—'}</td>
                         <td className="num">{money(x.cost)}</td><td><Badge tone={maintStatusTone[x.status]}>{maintStatusLabel[x.status]}</Badge></td>
                       </tr>
                     ))}
                   </tbody>
-                  <tfoot><tr><td colSpan={5}>إجمالي المنجز (مصروف + مرسمل):</td><td className="num">{money(maint.filter((x) => x.status === 'done').reduce((s, x) => s + x.cost, 0))}</td><td /></tr></tfoot>
                 </table>
               ) : <Empty text="لا توجد أوامر صيانة لهذا الأصل" />}
             </div>
@@ -327,11 +407,12 @@ export default function AssetForm() {
             txs.length ? (
               <ol className="relative space-y-3 border-s border-line ps-5">
                 {txs.map((t) => (
-                  <li key={t.id} className="relative cursor-pointer rounded-md p-1.5 hover:bg-gray-50" onClick={() => setOpenTx(t)}>
+                  <li key={t.id} className={`relative cursor-pointer rounded-md p-1.5 hover:bg-gray-50 ${t.isReversed ? 'opacity-60' : ''}`} onClick={() => setOpenTx(t)}>
                     <span className="absolute -start-[27px] top-3 h-3 w-3 rounded-full border-2 border-white bg-navy" />
                     <div className="flex flex-wrap items-center gap-2 text-sm">
                       <Badge tone={txTone[t.type]}>{txLabel[t.type]}</Badge>
                       <span className="font-medium text-navy" dir="ltr">{t.number}</span>
+                      {t.isReversed && <Badge tone="amber">معكوس</Badge>}
                       {t.journal.length > 0 && <span className="flex items-center gap-1 text-[11px] text-gray-500"><FileText className="h-3 w-3" />قيد</span>}
                     </div>
                     <div className="mt-0.5 text-sm text-gray-700">{txSummary(t, L) || t.notes}</div>
@@ -382,50 +463,107 @@ export default function AssetForm() {
   )
 }
 
+/** §7.2 Asset ledger as a tab of the asset card. */
+function LedgerTab({ asset, onOpen }: { asset: Asset; onOpen: (t: AssetTx) => void }) {
+  const { db } = useStore()
+  const [from, setFrom] = useState('2025-01-01')
+  const [to, setTo] = useState(TODAY)
+  const { opening, rows } = assetLedger(db, asset, from, to, (t) => txLabel[t.type])
+  return <LedgerTable db={db} from={from} to={to} setFrom={setFrom} setTo={setTo} opening={opening} rows={rows} onOpen={onOpen} />
+}
+
+export function LedgerTable({ db, from, to, setFrom, setTo, opening, rows, onOpen }: {
+  db: DB; from: string; to: string; setFrom: (s: string) => void; setTo: (s: string) => void
+  opening: { cost: number; accum: number }; rows: ReturnType<typeof assetLedger>['rows']; onOpen: (t: AssetTx) => void
+}) {
+  const nav = useNavigate()
+  return (
+    <div>
+      <div className="no-print mb-3 flex flex-wrap items-end gap-3">
+        <Field label="من"><input type="date" className="inp w-44" value={from} onChange={(e) => setFrom(e.target.value)} /></Field>
+        <Field label="إلى"><input type="date" className="inp w-44" value={to} onChange={(e) => setTo(e.target.value)} /></Field>
+        <span className="text-xs text-gray-500">الأرصدة الجارية تبدأ بقيم السجل كما في اليوم السابق لـ «من»، وآخر صف يساوي سجل الأصول عند «إلى».</span>
+      </div>
+      <div className="overflow-x-auto">
+        <table className="tbl">
+          <thead>
+            <tr><th>التاريخ</th><th>الحدث</th><th>الوثيقة</th><th>قيد</th><th className="!text-end">حركة التكلفة</th><th className="!text-end">حركة الإهلاك</th><th className="!text-end">التكلفة الجارية</th><th className="!text-end">المجمّع الجاري</th><th className="!text-end">الدفترية الجارية</th><th>ملاحظات</th></tr>
+          </thead>
+          <tbody>
+            <tr className="bg-gray-50 text-gray-600"><td colSpan={6}>الرصيد الافتتاحي</td><td className="num">{money(opening.cost)}</td><td className="num">{money(opening.accum)}</td><td className="num">{money(opening.cost - opening.accum)}</td><td /></tr>
+            {rows.map((r, i) => (
+              <tr key={i} className={`${r.txId || r.runId ? 'cursor-pointer' : ''} ${r.reversed ? 'text-gray-400' : ''}`}
+                onClick={() => (r.runId ? nav(`/runs/${r.runId}`) : r.txId && onOpen(db.txs.find((t) => t.id === r.txId)!))}>
+                <td dir="ltr" className="text-end">{r.date}</td>
+                <td>{r.event}{r.reversed && <span className="ms-1.5 rounded bg-amber-50 px-1 text-[10px] text-amber-700">معكوس</span>}</td>
+                <td dir="ltr" className="text-end text-navy">{r.doc}</td>
+                <td>{r.je ? '✓' : ''}</td>
+                <td className="num">{r.cost ? money(r.cost) : ''}</td>
+                <td className="num">{r.dep ? money(r.dep) : ''}</td>
+                <td className="num">{money(r.runCost)}</td>
+                <td className="num">{money(r.runAccum)}</td>
+                <td className="num font-semibold">{money(r.runNbv)}</td>
+                <td className="max-w-[16rem] truncate text-xs text-gray-500">{r.notes}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+        {rows.length === 0 && <Empty text="لا حركات في المدى المحدد" />}
+      </div>
+    </div>
+  )
+}
+
 function ActionModal({ kind, asset: a, onClose }: { kind: Exclude<Action, 'delete' | 'tag'>; asset: Asset; onClose: () => void }) {
   const { db, run } = useStore()
   const L = useLookups()
-  const [date, setDate] = useState(TODAY)
+  const stored = db.assets.find((x) => x.id === a.id) ?? a
+  const [date, setDate] = useState(() => (kind === 'cct' ? defaultCcDate(db, stored) : kind === 'capitalize' ? (a.depStartDate > TODAY ? a.depStartDate : TODAY) : TODAY))
   const [notes, setNotes] = useState('')
-  const [value, setValue] = useState(() => (kind === 'life' ? a.lifeMonths : kind === 'revalue' ? bookValue(db, a) : 0))
+  const [value, setValue] = useState(() => (kind === 'life' ? (a.isLegacy ? a.remainingLifeAtImport ?? 0 : a.lifeMonths) : kind === 'revalue' || kind === 'impair' ? bookValue(db, stored) : 0))
   const [party, setParty] = useState('')
-  const [to, setTo] = useState({ locationId: a.locationId, custodianId: a.custodianId, costCenterId: a.costCenterId })
-  const nbv = bookValue(db, a)
-  const posted = db.lines.filter((l) => l.assetId === a.id && l.isPosted).length
+  const [ref, setRef] = useState('')
+  const [newLife, setNewLife] = useState(0)
+  const [to, setTo] = useState({ locationId: a.locationId, custodianId: a.custodianId })
+  const [cc, setCc] = useState(a.costCenterId)
+  const nbv = bookValue(db, stored)
+  const posted = db.lines.filter((l) => l.assetId === a.id && l.isPosted && l.type === 'depreciation').length
+  const exit = kind === 'sell' || kind === 'dispose' ? exitPreview(db, stored, date) : null
+  const fs = db.settings.fiscalStartMonth
+  const ccDateWarn = kind === 'cct' && date !== defaultCcDate(db, stored)
+    ? `التاريخ المقترح ${defaultCcDate(db, stored)}: النقل في منتصف فترة ينقل قسط تلك الفترة كاملاً لأن تاريخ القسط نهاية الفترة (${periodEndOf(date, stored.periodicity, fs)}).`
+    : null
 
   const titles: Record<typeof kind, string> = {
-    capitalize: 'رسملة الأصل', pause: 'إيقاف الإهلاك', resume: 'استئناف الإهلاك', revalue: 'إعادة تقييم', transfer: 'نقل الأصل',
-    sell: 'بيع الأصل', dispose: 'استبعاد بلا مقابل', life: 'تعديل العمر الإنتاجي',
+    capitalize: 'رسملة الأصل', cancel: 'إلغاء الأصل', undo: 'تراجع عن الرسملة', pause: 'إيقاف الإهلاك', resume: 'استئناف الإهلاك',
+    revalue: 'إعادة تقييم بالزيادة', impair: 'هبوط قيمة', addCost: 'إضافة لاحقة (AddCost — 240)', reduceCost: 'تخفيض اقتناء (ReduceCost — 241)',
+    manual: 'إهلاك يدوي (242)', life: 'تعديل العمر الإنتاجي', transfer: 'نقل موقع / عهدة (234)', cct: 'نقل مركز الكلفة (237)', sell: 'بيع الأصل (236)', dispose: 'استبعاد بلا مقابل (235)',
   }
   const submit = () => {
     const ok = run((d) => {
       switch (kind) {
         case 'capitalize': return capitalize(d, a.id, date)
+        case 'cancel': return cancelAsset(d, a.id, date, notes)
+        case 'undo': return undoCapitalization(d, a.id, notes)
         case 'pause': return pause(d, a.id, date, notes)
         case 'resume': return resume(d, a.id, date, notes)
         case 'revalue': return revalue(d, a.id, date, value, notes)
+        case 'impair': return impair(d, a.id, date, value, notes)
+        case 'addCost': return addCost(d, a.id, date, value, ref, newLife || null, notes)
+        case 'reduceCost': return reduceCost(d, a.id, date, value, ref, notes)
+        case 'manual': return manualDepreciation(d, a.id, date, value, notes)
+        case 'life': return changeLife(d, a.id, date, value, notes)
         case 'transfer': return transfer(d, a.id, date, to, notes)
+        case 'cct': return costCenterTransfer(d, a.id, date, cc, notes)
         case 'sell': return sell(d, a.id, date, value, party, notes)
         case 'dispose': return dispose(d, a.id, date, notes)
-        case 'life': {
-          const x = d.assets.find((y) => y.id === a.id)!
-          if (Math.round(value / MPP[x.periodicity]) <= d.lines.filter((l) => l.assetId === a.id && l.isPosted).length) return 'العمر الجديد لا يتجاوز عدد الأقساط المُرحّلة'
-          const old = x.lifeMonths
-          x.lifeMonths = value
-          generateSchedule(d, x, d.classes.find((k) => k.id === x.classId)!)
-          d.txs.push({
-            id: `tx-adj-${Date.now()}`, number: nextNo('AAJ', d.txs.map((t) => t.number)),
-            assetId: a.id, type: 'adjustment', date, amount: 0, fromValue: old, toValue: value, journal: [], user: 'superadmin',
-            notes: `تعديل العمر الإنتاجي من ${old} إلى ${value} شهراً — أُعيد توليد الأقساط غير المُرحّلة فقط${notes ? ` — ${notes}` : ''}`,
-          })
-          return null
-        }
       }
     }, `تم تنفيذ: ${titles[kind]}`)
     if (ok) onClose()
   }
 
-  const gain = value - nbv
+  const gain = value - (exit?.nbv ?? 0)
+  const noDate = kind === 'undo'
   return (
     <Modal
       title={`${titles[kind]} — ${a.code}`}
@@ -433,25 +571,51 @@ function ActionModal({ kind, asset: a, onClose }: { kind: Exclude<Action, 'delet
       footer={<><button type="button" className="btn" onClick={onClose}>إلغاء</button><button type="button" className="btn btn-primary" onClick={submit}>تنفيذ</button></>}
     >
       <div className="grid grid-cols-2 gap-3">
-        <Field label="تاريخ العملية" required><input type="date" className="inp" value={date} onChange={(e) => setDate(e.target.value)} /></Field>
+        {!noDate && <Field label={kind === 'cct' ? 'تاريخ السريان' : 'التاريخ الفعلي'} required><input type="date" className="inp" value={date} onChange={(e) => setDate(e.target.value)} /></Field>}
         <Field label="القيمة الدفترية الحالية"><ReadOnly ltr>{money(nbv)}</ReadOnly></Field>
+
         {kind === 'capitalize' && (
           <div className="col-span-2 space-y-1 rounded-md bg-gray-50 p-3 text-xs text-gray-600">
-            <div>• يتحوّل الأصل إلى «قيد الإهلاك» ويُولَّد جدول الإهلاك ({methodLabel[a.method]}، {a.lifeMonths} شهراً، {periodicityLabel[a.periodicity]}).</div>
-            <div>• {a.sourceDocRef ? `مرتبط بفاتورة المشتريات ${a.sourceDocRef} — لا يُنشأ قيد رسملة إضافي.` : 'لا توجد وثيقة شراء — يُنشأ قيد رسملة: مدين حساب الأصل / دائن الموردون.'}</div>
-            <div>• يُتحقَّق من اكتمال حسابات الفئة وقابليتها للترحيل.</div>
+            <div>• يتحوّل الأصل إلى «قيد الإهلاك» ويُولَّد الجدول ({methodLabel[a.method]}، {a.lifeMonths} شهراً، {periodicityLabel[a.periodicity]}، {prorataLabel[a.prorata]}).</div>
+            <div>• {a.sourceDocRef ? `مرتبط بفاتورة المشتريات ${a.sourceDocRef} — لا قيد رسملة من الوحدة.` : 'لا وثيقة شراء — قيد رسملة: مدين حساب الأصل / دائن الموردون.'}</div>
+            <div>• يُتحقَّق من حسابات الفئة، وأن العمر من مضاعفات الفترة{L.cls(a.classId)?.kind === 'lowValue' ? '، وحدّ الأصول منخفضة القيمة' : ''}.</div>
           </div>
         )}
-        {kind === 'revalue' && (
+        {kind === 'cancel' && <div className="col-span-2 text-xs text-gray-500">حالة نهائية بلا قيود؛ يبقى الرمز {a.code} محجوزاً والسجل للتدقيق.</div>}
+        {kind === 'undo' && <div className="col-span-2 text-xs text-gray-500">مسموح فقط قبل ترحيل أي قسط وقبل أي إعادة تقييم. يُعكس قيد الرسملة (إن رحّلته الوحدة) بنفس التاريخ ويُحذف الجدول، ويعود الأصل مسودة.</div>}
+        {kind === 'resume' && <div className="col-span-2 text-xs text-gray-500">الإيقاف لا يستهلك العمر: الفترات المتبقية بلا تغيير، وأول قسط بعد الاستئناف كامل.</div>}
+        {(kind === 'revalue' || kind === 'impair') && (
           <>
-            <Field label="القيمة الجديدة (العادلة)" required><NumInput value={value} onChange={setValue} /></Field>
+            <Field label="القيمة الدفترية الجديدة" required><NumInput value={value} onChange={setValue} /></Field>
             <Field label="الفرق"><ReadOnly ltr><span className={value - nbv < 0 ? 'text-red-600' : 'text-emerald-700'}>{money(value - nbv)}</span></ReadOnly></Field>
-            <div className="col-span-2 text-xs text-gray-500">الزيادة: مدين حساب الأصل / دائن فائض إعادة التقييم · النقص: مدين خسائر الاستبعاد / دائن حساب الأصل. تُعاد حسبة الأقساط غير المُرحّلة فقط ({posted} قسطاً مُرحّلاً لن يتغيّر).</div>
+            <div className="col-span-2 text-xs text-gray-500">
+              {kind === 'revalue' ? 'مدين حساب الأصل / دائن فائض إعادة التقييم (233).' : 'مدين خسائر الاستبعاد (إلى حين اعتماد حساب هبوط القيمة، §12.8) / دائن حساب الأصل (238).'}
+              {' '}تُعاد حسبة الأقساط غير المُرحّلة فقط ({posted} مُرحّلاً لن يتغيّر).{kind === 'revalue' && stored.state === 'closed' ? ' الأصل مكتمل الإهلاك سيعود «قيد الإهلاك» إن بقيت قيمة قابلة للإهلاك.' : ''}
+            </div>
+          </>
+        )}
+        {(kind === 'addCost' || kind === 'reduceCost') && (
+          <>
+            <Field label="المبلغ" required><NumInput value={value} onChange={setValue} /></Field>
+            <Field label={kind === 'addCost' ? 'مرجع فاتورة الشراء (اختياري)' : 'مرجع مذكرة الدائن (اختياري)'} hint="مع المرجع لا تُنشئ الوحدة قيداً"><input className="inp" dir="ltr" value={ref} onChange={(e) => setRef(e.target.value)} /></Field>
+            {kind === 'addCost' && <Field label="عمر متبقٍّ جديد (اختياري، شهر)" hint="فارغ = الفترات المتبقية بلا تغيير"><NumInput value={newLife} onChange={setNewLife} /></Field>}
+            <div className="col-span-2 text-xs text-gray-500">
+              {kind === 'addCost'
+                ? `القيمة الأصلية ${money(stored.originalValue)} ← ${money(stored.originalValue + value)}؛ يُعاد توزيع المتبقي على الفترات المتبقية دون تدارك بأثر رجعي.`
+                : `يُرفض إن هبطت القيمة دون المجمّع المُرحّل + المستورد (${money(accumOf(db, stored))}).`}
+            </div>
+          </>
+        )}
+        {kind === 'manual' && (
+          <>
+            <Field label="المبلغ" required><NumInput value={value} onChange={setValue} /></Field>
+            <Field label="المتبقي القابل للإهلاك"><ReadOnly ltr>{money(remainingDepreciable(db, stored))}</ReadOnly></Field>
+            <div className="col-span-2 text-xs text-gray-500">يُنشأ سطر «يدوي» مُرحّل بقيده (مدين مصروف / دائن مجمّع)، ويُعاد توزيع الباقي على الفترات المتبقية بلا تغيير. يُعدّ حدثاً تابعاً عند عكس الدورات.</div>
           </>
         )}
         {kind === 'life' && (
           <>
-            <Field label="العمر الإنتاجي الجديد (شهر)" required><NumInput value={value} onChange={setValue} /></Field>
+            <Field label={a.isLegacy ? 'العمر المتبقي عند الاستيراد الجديد (شهر)' : 'العمر الإنتاجي الجديد (شهر)'} required hint={`من مضاعفات ${MPP[a.periodicity]}`}><NumInput value={value} onChange={setValue} /></Field>
             <Field label="الأقساط المُرحّلة"><ReadOnly ltr>{posted}</ReadOnly></Field>
           </>
         )}
@@ -459,23 +623,43 @@ function ActionModal({ kind, asset: a, onClose }: { kind: Exclude<Action, 'delet
           <>
             <Field label="الموقع الجديد" required><Select value={to.locationId} onChange={(v) => setTo({ ...to, locationId: v })} options={L.locOptions} /></Field>
             <Field label="صاحب العهدة الجديد" required><Select value={to.custodianId} onChange={(v) => setTo({ ...to, custodianId: v })} options={L.empOptions} /></Field>
-            <Field label="مركز الكلفة" required><Select value={to.costCenterId} onChange={(v) => setTo({ ...to, costCenterId: v })} options={L.ccOptions} /></Field>
-            <div className="text-xs text-gray-500">نقل الموقع أو العهدة بلا قيد. تغيير مركز الكلفة يُطبَّق على أقساط الفترة التالية.</div>
+            <div className="col-span-2 text-xs text-gray-500">بلا قيد — رقم للتتبّع فقط. مسموح أيضاً للأصل مكتمل الإهلاك.</div>
           </>
         )}
-        {kind === 'sell' && (
+        {kind === 'cct' && (
           <>
-            <Field label="المشتري" required><input className="inp" value={party} onChange={(e) => setParty(e.target.value)} /></Field>
-            <Field label="سعر البيع" required><NumInput value={value} onChange={setValue} /></Field>
-            <Field label={gain >= 0 ? 'ربح البيع' : 'خسارة البيع'}><ReadOnly ltr><span className={gain < 0 ? 'text-red-600' : 'text-emerald-700'}>{money(Math.abs(gain))}</span></ReadOnly></Field>
+            <Field label="من"><ReadOnly>{L.ccName(a.costCenterId)}</ReadOnly></Field>
+            <Field label="إلى" required><Select value={cc} onChange={setCc} options={L.ccOptions} /></Field>
+            <div className="col-span-2 space-y-1 text-xs text-gray-500">
+              <div>لا قيد افتراضياً: كل قسط يأخذ المركز الساري في تاريخه، والأقساط المُرحّلة تبقى على مركزها (§5.5). لا نقل بأثر رجعي قبل آخر قسط مُرحّل.</div>
+              {ccDateWarn && <div className="text-amber-700">⚠ {ccDateWarn}</div>}
+            </div>
           </>
         )}
-        {(kind === 'sell' || kind === 'dispose') && (
-          <div className="col-span-2 text-xs text-amber-700">تُلغى كل أقساط الإهلاك غير المُرحّلة ويُنشأ قيد الإغلاق.</div>
+        {exit && (
+          <>
+            {kind === 'sell' && (
+              <>
+                <Field label="المشتري" required><input className="inp" value={party} onChange={(e) => setParty(e.target.value)} /></Field>
+                <Field label="سعر البيع" required><NumInput value={value} onChange={setValue} /></Field>
+              </>
+            )}
+            <div className="col-span-2 rounded-md border border-line">
+              <table className="tbl">
+                <tbody>
+                  {exit.blocking && <tr><td colSpan={2} className="text-red-600">Assets:PostDepreciationFirst — رحّل دورة {exit.blocking.date.slice(0, 7)} أولاً</td></tr>}
+                  <tr><td>القيمة الأصلية</td><td className="num">{money(exit.gross)}</td></tr>
+                  <tr><td>إهلاك حتى تاريخ الإخراج ({prorataLabel[stored.prorata]}{exit.toDate ? ` — ${Math.round(exit.g * 100)}%` : ''})</td><td className="num">{money(exit.toDate)}</td></tr>
+                  <tr><td>المجمّع عند الإخراج</td><td className="num">{money(exit.accum)}</td></tr>
+                  <tr><td>القيمة الدفترية</td><td className="num font-semibold">{money(exit.nbv)}</td></tr>
+                  {kind === 'sell' && <tr><td>{gain >= 0 ? 'ربح البيع' : 'خسارة البيع'}</td><td className={`num font-semibold ${gain < 0 ? 'text-red-600' : 'text-emerald-700'}`}>{money(Math.abs(gain))}</td></tr>}
+                </tbody>
+              </table>
+            </div>
+            <div className="col-span-2 text-xs text-amber-700">زوج «حتى التاريخ» جزء من قيد {kind === 'sell' ? 'البيع' : 'الاستبعاد'} ويُعكس معه؛ وتُلغى بقية الأقساط غير المُرحّلة. يُخرَج الأصل كاملاً (الاستبعاد الجزئي خارج v1).</div>
+          </>
         )}
-        {kind !== 'capitalize' && (
-          <Field label="ملاحظات" span={2}><input className="inp" value={notes} onChange={(e) => setNotes(e.target.value)} /></Field>
-        )}
+        {kind !== 'capitalize' && <Field label="ملاحظات" span={2}><input className="inp" value={notes} onChange={(e) => setNotes(e.target.value)} /></Field>}
       </div>
     </Modal>
   )
