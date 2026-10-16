@@ -1,12 +1,14 @@
 import {
-  Archive, ArrowLeftRight, BarChart3, Bell, BellRing, Boxes, Building2, ChevronLeft, ClipboardList, Cog, Factory,
+  Archive, ArrowLeftRight, BarChart3, Bell, BellRing, Boxes, Building2, ChevronDown, ChevronLeft, ClipboardList, Cog, Factory,
   FolderKanban, Globe, Handshake, Landmark, Languages, LayoutDashboard, MapPin, Menu, Monitor, Package, Plus, Search,
-  Settings, Shield, ShoppingBag, ShoppingCart, Store, Tags, TrendingDown, TrendingUp, Truck, Users, Wrench, Trash2,
+  Settings, Shield, ShoppingBag, ShoppingCart, Store, Tags, TrendingDown, TrendingUp, Truck, Users, Layers, UserCog,
   type LucideIcon,
 } from 'lucide-react'
 import { useState, type ReactNode } from 'react'
 import { Link, NavLink, useNavigate } from 'react-router-dom'
+import { roleLabel } from '../data/format'
 import { useStore } from '../data/store'
+import type { RoleId } from '../data/types'
 
 const otherModules: [string, LucideIcon][] = [
   ['الإدارة', Building2], ['إدارة الشحن', Truck], ['نقاط البيع', Store], ['المبيعات', ShoppingCart], ['السوق', Globe],
@@ -15,18 +17,16 @@ const otherModules: [string, LucideIcon][] = [
   ['إدارة المشاريع', FolderKanban], ['التصنيع', Factory],
 ]
 
-export const assetNav: { to: string; label: string; icon: LucideIcon }[] = [
+export const assetNav: { to: string; label: string; icon: LucideIcon; section?: string }[] = [
   { to: '/', label: 'لوحة المعلومات', icon: LayoutDashboard },
-  { to: '/assets', label: 'سجل الموجودات', icon: Package },
-  { to: '/categories', label: 'فئات الموجودات', icon: Tags },
-  { to: '/locations', label: 'المواقع', icon: MapPin },
-  { to: '/depreciation', label: 'احتساب الاستهلاك', icon: TrendingDown },
-  { to: '/transfers', label: 'نقل الموجودات', icon: ArrowLeftRight },
-  { to: '/revaluations', label: 'إعادة التقييم', icon: TrendingUp },
-  { to: '/disposals', label: 'الاستبعاد والبيع', icon: Trash2 },
-  { to: '/maintenance', label: 'الصيانة', icon: Wrench },
+  { to: '/assets', label: 'سجل الأصول', icon: Package },
+  { to: '/runs', label: 'دورات الإهلاك', icon: TrendingDown },
+  { to: '/transactions', label: 'حركات الأصول', icon: ArrowLeftRight },
   { to: '/reports', label: 'التقارير', icon: BarChart3 },
-  { to: '/settings', label: 'إعدادات الوحدة', icon: Cog },
+  { to: '/classes', label: 'فئات الأصول', icon: Tags, section: 'الإعدادات' },
+  { to: '/locations', label: 'المواقع', icon: MapPin },
+  { to: '/groups', label: 'المجموعات', icon: Layers },
+  { to: '/settings', label: 'الصلاحيات والترقيم', icon: Cog },
 ]
 
 function Sidebar({ collapsed, onToggle }: { collapsed: boolean; onToggle: () => void }) {
@@ -55,9 +55,10 @@ function Sidebar({ collapsed, onToggle }: { collapsed: boolean; onToggle: () => 
           </button>
           {open && (
             <div className="space-y-0.5 pb-1.5">
-              {assetNav.map(({ to, label, icon: Icon }) => (
+              {assetNav.map(({ to, label, icon: Icon, section }) => (
+                <div key={to}>
+                {section && !collapsed && <div className="pe-2 ps-7 pb-1 pt-2 text-[10px] font-semibold uppercase tracking-wide text-gray-400">{section}</div>}
                 <NavLink
-                  key={to}
                   to={to}
                   end={to === '/'}
                   title={label}
@@ -70,6 +71,7 @@ function Sidebar({ collapsed, onToggle }: { collapsed: boolean; onToggle: () => 
                   <Icon className="h-4 w-4 shrink-0" />
                   {!collapsed && label}
                 </NavLink>
+                </div>
               ))}
             </div>
           )}
@@ -100,6 +102,37 @@ function Sidebar({ collapsed, onToggle }: { collapsed: boolean; onToggle: () => 
   )
 }
 
+function RoleMenu() {
+  const { db, run } = useStore()
+  const [open, setOpen] = useState(false)
+  return (
+    <div className="relative ms-2 border-s border-line ps-3">
+      <button type="button" onClick={() => setOpen((o) => !o)} className="flex items-center gap-2 rounded-md p-1 hover:bg-gray-50">
+        <div className="relative">
+          <div className="grid h-8 w-8 place-items-center rounded-full bg-gray-200 text-xs font-semibold text-gray-600">SA</div>
+          <span className="absolute bottom-0 end-0 h-2.5 w-2.5 rounded-full border-2 border-white bg-emerald-500" />
+        </div>
+        <div className="hidden text-start leading-tight md:block">
+          <div className="text-[13px] font-semibold" dir="ltr">Super Admin</div>
+          <div className="text-[11px] text-gray-500">{roleLabel[db.role]}</div>
+        </div>
+        <ChevronDown className="h-3.5 w-3.5 text-gray-400" />
+      </button>
+      {open && (
+        <div className="absolute end-0 top-11 z-40 w-60 rounded-md border border-line bg-white py-1 shadow-lg">
+          <div className="flex items-center gap-1.5 px-3 py-1.5 text-[11px] font-semibold text-gray-400"><UserCog className="h-3.5 w-3.5" />تبديل الدور (للعرض)</div>
+          {(Object.keys(roleLabel) as RoleId[]).map((r) => (
+            <button key={r} type="button" onClick={() => { run((d) => { d.role = r }, `الدور الحالي: ${roleLabel[r]}`); setOpen(false) }}
+              className={`block w-full px-3 py-1.5 text-start text-sm hover:bg-gray-50 ${db.role === r ? 'font-semibold text-navy' : 'text-gray-700'}`}>
+              {roleLabel[r]}
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  )
+}
+
 function Topbar() {
   const nav = useNavigate()
   return (
@@ -121,16 +154,7 @@ function Topbar() {
             {I === Bell && <span className="absolute end-1.5 top-1.5 h-2 w-2 rounded-full bg-red-500" />}
           </button>
         ))}
-        <div className="ms-2 flex items-center gap-2 border-s border-line ps-3">
-          <div className="relative">
-            <div className="grid h-8 w-8 place-items-center rounded-full bg-gray-200 text-xs font-semibold text-gray-600">SA</div>
-            <span className="absolute bottom-0 end-0 h-2.5 w-2.5 rounded-full border-2 border-white bg-emerald-500" />
-          </div>
-          <div className="hidden leading-tight md:block" dir="ltr">
-            <div className="text-[13px] font-semibold">Super Admin</div>
-            <div className="text-[11px] text-gray-500">superadmin</div>
-          </div>
-        </div>
+        <RoleMenu />
       </div>
     </header>
   )

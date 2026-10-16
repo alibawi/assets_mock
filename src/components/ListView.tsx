@@ -14,7 +14,7 @@ export interface Column<T> {
 }
 
 export function ListView<T extends { id: string }>({
-  title, crumbs, rows, columns, newTo, newLabel = 'جديد', rowTo, searchText, filters, kpis, onNew,
+  title, crumbs, rows, columns, newTo, newLabel = 'جديد', rowTo, onRowClick, searchText, filters, kpis, onNew, tabs, canNew = true,
 }: {
   title: string
   crumbs?: { label: string; to?: string }[]
@@ -24,6 +24,9 @@ export function ListView<T extends { id: string }>({
   newLabel?: string
   onNew?: () => void
   rowTo?: (r: T) => string
+  onRowClick?: (r: T) => void
+  tabs?: ReactNode
+  canNew?: boolean
   searchText: (r: T) => string
   filters?: ReactNode
   kpis?: { label: string; value: string }[]
@@ -43,7 +46,7 @@ export function ListView<T extends { id: string }>({
           <>
             <button type="button" className="btn" onClick={() => toast('تم تصدير القائمة إلى Excel (محاكاة)')}><Download className="h-4 w-4" />تصدير</button>
             <button type="button" className="btn" onClick={() => window.print()}><Printer className="h-4 w-4" />طباعة</button>
-            {(newTo || onNew) && (
+            {(newTo || onNew) && canNew && (
               <button type="button" className="btn btn-primary" onClick={() => (onNew ? onNew() : nav(newTo!))}>
                 <Plus className="h-4 w-4" />{newLabel}
               </button>
@@ -57,13 +60,14 @@ export function ListView<T extends { id: string }>({
           {kpis.map((k) => (
             <div key={k.label} className="card px-4 py-3">
               <div className="text-xs text-gray-500">{k.label}</div>
-              <div className="mt-1 text-lg font-bold tabular-nums text-gray-900" dir="ltr" style={{ textAlign: 'right' }}>{k.value}</div>
+              <div className="mt-1 break-all text-base font-bold tabular-nums text-gray-900 xl:text-lg" dir="ltr" style={{ textAlign: 'right' }}>{k.value}</div>
             </div>
           ))}
         </div>
       )}
 
       <div className="card">
+        {tabs}
         <div className="no-print flex flex-wrap items-center gap-2 border-b border-line p-3">
           <div className="relative w-64">
             <Search className="absolute start-2.5 top-2 h-4 w-4 text-gray-400" />
@@ -79,7 +83,7 @@ export function ListView<T extends { id: string }>({
             </thead>
             <tbody>
               {shown.map((r) => (
-                <tr key={r.id} className={rowTo ? 'cursor-pointer' : ''} onClick={() => rowTo && nav(rowTo(r))}>
+                <tr key={r.id} className={rowTo || onRowClick ? 'cursor-pointer' : ''} onClick={() => (rowTo ? nav(rowTo(r)) : onRowClick?.(r))}>
                   {columns.map((c) => <td key={c.key} className={c.num ? 'num' : ''}>{c.render(r)}</td>)}
                 </tr>
               ))}
