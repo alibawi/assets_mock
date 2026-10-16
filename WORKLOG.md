@@ -1,0 +1,57 @@
+# WORKLOG
+
+> Rules: read from the top before any work. Append a new entry at the bottom after every task. Never edit or delete past entries.
+
+---
+
+## 2026-10-16 — Foundation + first module pass (v0.1)
+
+**Module / screen:** whole mock — shell + Fixed Assets.
+
+**Completed**
+- Vite/React/TS/Tailwind project, ENKI ERP RTL shell (right sidebar with all ENKI modules, top bar, breadcrumb page header, navy split "حفظ" button, toolbar dropdowns), shared UI kit, ListView.
+- First pass of every screen, built before the source documents reached this machine (owner asked to start building).
+
+**Key design decisions**
+- Stack: Vite + React instead of the playbook default Next.js + shadcn — the owner asked to start immediately and no project brief was available; state is client-side so it works on any static host. **Open:** confirm or switch if `project-brief.md` requires Next.js.
+- HashRouter + `localStorage` store so `dist/` runs from any static host.
+
+**Issues / deferred:** `docs/project-brief.md` and `docs/discovery-ar.md` not received.
+
+**Verification:** `npm run build` passes; dev server opened, dashboard, asset card, depreciation run and disposal pages exercised; post flow tested.
+
+**Next step:** align with the plan once received.
+
+---
+
+## 2026-10-16 — Alignment with `assets-management-module-plan-ar.md`
+
+**Module / screen:** Fixed Assets — all screens.
+
+**Completed**
+- Data model per plan §3: AssetClass (method, life, declining factor, periodicity, prorata, six account codes, IsDepreciable), AssetLocation tree, AssetGroup, Asset (legacy + imported accumulated depreciation, source doc ref, tag/serial, cost center), AssetDepreciationLine, AssetTransaction, AssetDepreciationRun.
+- Engine per §5.1: SL / DB / DB-then-SL, prorata None / ConstantPeriods / ByDays, rounding difference on the last line, regenerate only unposted lines.
+- State machine per §4: Draft → Running (capitalize, with the rule-1 validations) → Paused/Resume, Revalue, Transfer, Sell, Dispose, auto-Closed after the last posted line; delete only Draft, non-legacy, no posted lines.
+- Runs per §5.4: Draft (simulation) → Posted (one journal entry grouped by expense account × cost center / accum account, duplicate-period guard, IsPosted re-check) → Reversed (reversal entry, lines back to planned).
+- Journal entries per §5.3 for capitalization (only without a purchase bill — §12 decision 3), revaluation ±, sale with gain/loss, disposal; transfers have no entry.
+- Reports per §7: register as of date, depreciation forecast (period × class), by location / custodian, disposals with gain/loss, GL reconciliation (difference column).
+- Permissions per §6.3: role switcher (cosmetic, gates buttons) + role × permission matrix; document types per §3.10.
+- Screens: dashboard (KPIs), asset register (state tabs + filters), asset card (5 tabs incl. depreciation board and event timeline), runs list/document, transactions log, classes, locations tree, groups, permissions & numbering.
+- Removed the first-pass maintenance screen and per-document transfer/revaluation/disposal pages: in the plan these are asset actions (§6.2), and maintenance is a phase-5 item without defined fields.
+
+**Key design decisions / assumptions (need confirmation)**
+1. Account codes for accumulated depreciation `1190000001..04` and expense `3700000001..04` are from §3.9; gain `4900000001`, loss `3800000001`, revaluation surplus `2500000001`, cash `1200000001`, suppliers `2100000001`, land `1100000009` are **placeholders marked "مقترح"** (plan §12 decision 1).
+2. IT equipment class uses the furniture & office equipment accounts (`…04`) — the seeded chart has no separate IT account.
+3. Depreciation area is fixed to `01 — Local GAAP` and its UI is hidden (plan §3.2, phase 5).
+4. Cost-center change on transfer: plan §5.3 lists an entry "from the next period" but gives no amount; the mock records the change and applies the new cost center to later run lines, without a separate entry.
+5. Legacy assets: `lifeMonths` holds the *remaining* life from go-live 2026-01-01 (as in plan example أ.8).
+6. Yearly periodicity lines fall on 31 Dec; buildings are yearly in the demo, so no building depreciation is posted before Dec 2026.
+
+**Verification**
+- `npm run build` passes; zero console errors after reload.
+- Engine checked in the browser against plan examples: 36,000,000/36 → 36 × 1,000,000; 10,000/3 → 3,333/3,333/3,334; salvage 50,000/5,000 → 45,000; prorata by days 15 Mar → 274,194 (17 days) … last 725,806 on 2027-02-28, total 6,000,000; land → no lines; DB 40% → 40/24/14.4/8.64/12.96 M; DB-then-SL → 20/12/7.2/5.4/5.4 M; legacy 80M − 50M over 24 → 1,250,000.
+- UI flow: capitalized a draft asset (FA-000023), simulated and posted October run (15 lines, one balanced entry grouped by cost center), reversed it (lines back to planned). GL reconciliation report shows zero differences.
+
+**Issues / deferred:** project brief and discovery notes still missing; phase-4 items (purchase-bill listener, Excel legacy import) and phase-5 items (multiple areas, batch assets, physical count, maintenance) are not in the mock.
+
+**Next step:** owner review; then gap list from the project brief.
