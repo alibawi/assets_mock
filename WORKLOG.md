@@ -107,3 +107,17 @@
 **Verification:** none needed (decision record only).
 
 **Next step:** awaiting further owner feedback; project brief / discovery notes still not received.
+
+---
+
+## 2026-10-16 — Plan addendum (owner request)
+
+**Module / screen:** docs.
+
+**Completed:** `docs/plan-addendum-ar.md` — «ملحق ب»: maintenance entity and capitalization (approved), gaps found while building (cost-center transfer entry, state-machine additions, reversal ordering, run overlap guard, missing document types, prorata/periodicity definitions, legacy remaining life, as-of-date register), the open §12 decisions with the placeholder account codes, and proposed extra tests. Each item references the plan section and carries a status (approved / applied-awaiting / open).
+
+**Key design decisions:** written in the mock repo; the original plan in `docs/source/` and in the JasimERP repo is untouched.
+
+**Verification:** cross-checked every "applied" statement against `src/data/calc.ts` and `src/data/lifecycle.ts`.
+
+**Next step:** owner review; optionally copy into `JasimERP/docs/planning/assets` with approval.
