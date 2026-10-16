@@ -121,3 +121,37 @@
 **Verification:** cross-checked every "applied" statement against `src/data/calc.ts` and `src/data/lifecycle.ts`.
 
 **Next step:** owner review; optionally copy into `JasimERP/docs/planning/assets` with approval.
+
+---
+
+## 2026-10-16 — Plan revisions 2 and 3 applied to the mock
+
+**Module / screen:** Fixed Assets — data model, engine, state machine, runs, reports, asset card, classes, settings, maintenance.
+
+**Completed**
+- Source: copied the updated plan (`assets-management-module-plan-ar.md` / `-en.md`, status «المراجعة 2 … المراجعة 3») and `assets-decisions-9-11-ar.md` from `JasimERP/docs/planning/assets` into `docs/source/`.
+- Data model (§3): `AssetKind` on class; account codes moved to `classAreaAccounts` per (class × area) with the default area 01 (§3.1.1); `areas` and `areaSettings` (§3.2.1) stored, engine reads the denormalized default-area copy; Asset gains `capitalizationDate`, `importCutoffDate`, `remainingLifeAtImport`, bill line/sequence; line types Depreciation / Manual / ToDate with `fraction`; AssetTransaction gains doc type, from/to state, `accumulatedAtEvent`, reversal links, external (other-module) entries.
+- Engine (§5.1.1): fiscal-calendar periods (fiscal year starts January, §12.7 default); life must be a multiple of the period; ConstantPeriods/ByDays proration with an N+1 completion line (A.5 corrected); legacy starts the period after the cut-off with the mandatory remaining life; LowValue = one 100 % line; Land = none; Resume never prorates.
+- State machine (§4.1): Cancel, UndoCapitalization, Closed → Running on upward revaluation / AddCost / life change, Transfer on Closed, Sell/Dispose from Running/Paused/Closed with PostDepreciationFirst and a ToDate line inside the exit entry (§5.6.1), ReverseSale/ReverseDisposal to FromState dated at the original event.
+- New events (§5.6): AddCost 240, ReduceCost 241 (ReductionExceedsBookValue), ManualDepreciation 242, Impair 238 as its own action; revaluation is upward only (233).
+- Cost-center transfer (§5.5): separate action 237 with effective date (default = first day of next unposted period, warning otherwise), no retroactive dates, each run line takes the cost center as of its LineDate, no entry; reversible while no later posted line.
+- Runs (§3.8.1): no overlap (all-classes vs class, one Draft max), no gaps, LIFO reversal (`Assets:ReverseLaterRunsFirst`), no reversal under later dependent events, reversal entry dated at PeriodEnd.
+- Reports (§7): register as of any past date (pending depreciation, salvage column, location/custodian/cost center as of the date, legacy excluded before cut-off with footer count), reconciliation with the same asOfDate, Asset Ledger (report + asset-card tab, ToDate rows separate), Roll-forward with "unexplained" = 0. Seven reports.
+- §5.6.6: "من سطر فاتورة شراء" on the register creates N drafts (last one takes rounding; idempotent per bill + line). Seed includes 3 monitors from PB-2026-0140.
+- Maintenance: capitalized orders now post an AddCost (240) on the asset; maintenance moved to doc type 243 MNT (marked مقترح) because 237 is ACC.
+- Settings: document types 230–242 (+243 proposed), event → type table, capitalization and LowValue thresholds, §12 decisions 1–11 with the applied defaults.
+- `npm run check` (`scripts/engine-check.ts`): A.1, A.3–A.6, A.8–A.12, tests 2–3, 20, 23, 30, 34, 37, gap/overlap/LIFO/dependent-event rules, PostDepreciationFirst, seed reconciliation (today and 2026-06-30) and roll-forward (incl. across the cut-off).
+
+**Key design decisions / interpretations**
+1. §7.1 lists Capitalization, OpeningBalance, Revaluation, Impairment as value-changing; the mock also counts Addition and AcquisitionReduction (they change the value per §5.6.2–5.6.3).
+2. Paused assets: Sell/Dispose skip PostDepreciationFirst and the ToDate line (no depreciation while paused) — the plan does not say.
+3. Reversal actions exist for Sale, Disposal, CostCenterTransfer and Capitalization (UndoCapitalization). The plan names dependent events (revaluation, impairment, AddCost…) as "reverse them first" but defines no reverse action for them — not built.
+4. UndoCapitalization of a bill-linked asset keeps the purchase-bill entry, so reconciliation would show a difference until purchasing reverses the bill — shown truthfully.
+5. Pause / Resume / Adjustment / Cancel have no document type; the mock numbers them `TRX-YYYY-####` internally.
+6. Projects: plan §5.5 applies the same effective-date mechanism to projects; the mock has no project master list, so only cost centers are effective-dated.
+7. Multi-area: tables exist with the single default area; no second-area UI (phase 5 per plan).
+8. Low-value threshold default is null (disabled) per §5.6.5; decision 11 recommends enabling it — setting available.
+
+**Verification:** `npm run build` passes; `npm run check` all passed; browser (1366×850): every route renders, zero console errors after reload; sold FA-000006 on 2026-10-16 (ToDate 640,000 = 16/31, gain 9,800,000, balanced entry) then reversed it (back to Running, 11 lines regenerated); cost-center transfer default 2026-10-01, 2026-09-15 rejected as retroactive; October run posted with the new cost center on FA-000016; reversing September rejected by LIFO; purchase-line modal created 3 drafts 3,333,333/3,333,333/3,333,334 and refused a repeat.
+
+**Next step:** owner review; open decisions §12.1 (accounts), §12.6–12.11 confirmations.

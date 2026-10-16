@@ -21,5 +21,6 @@ Detailed screen spec: `docs/spec-assets.md`. Progress log: `WORKLOG.md`.
 | 6 | Transactions log (audit trail) | ✅ |
 | 7 | Reports: register, forecast, by location/custody, disposals, GL reconciliation | ✅ |
 | 8 | Permissions matrix + document numbering, dashboard KPIs | ✅ |
-| 9 | Gap review against `project-brief.md` / `discovery-ar.md` (not yet received) | ⏳ |
-| 10 | Phase 4–5 placeholders if wanted (purchase-bill link, legacy Excel import, maintenance, multi-area) | ⏳ needs decision |
+| 9 | Plan revisions 2–3: full §4.1 matrix, §3.8.1 run rules, §5.5 cost-center dating, §5.6 events, kinds, 7 reports, `npm run check` | ✅ |
+| 10 | Gap review against `project-brief.md` / `discovery-ar.md` (not yet received) | ⏳ |
+| 11 | Phase 4–5 placeholders if wanted (purchase-bill link, legacy Excel import, maintenance, multi-area) | ⏳ needs decision |

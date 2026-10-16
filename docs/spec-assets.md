@@ -1,67 +1,69 @@
 # Spec — Fixed Assets (الموجودات الثابتة)
 
-Derived from `docs/source/assets-management-module-plan-ar.md` (§ numbers below refer to it). Anything the plan
-does not define is listed under *Open points* and in `WORKLOG.md`.
+Derived from `docs/source/assets-management-module-plan-ar.md` **revision 3** (§ numbers refer to it). Mock-only
+decisions are in `WORKLOG.md` and `docs/plan-addendum-ar.md` (ب.0 maps each addendum item to the plan section that now covers it).
 
 ## 1. Scope and relationships
-Full asset lifecycle: acquisition, capitalization, periodic depreciation, revaluation, transfer, pause, sale, disposal (§1).
-Depends on Core (organization, cost center, numbering, periods), Finance (chart of accounts, posting), later HR (custodian) and Procurement (capitalization from bill) (§2.1). In the mock these appear as seeded lookup lists.
+Full lifecycle: acquisition, capitalization, periodic depreciation, revaluation / impairment, additions and reductions,
+manual depreciation, transfers (location / custodian / cost center), pause, sale, disposal, reversals (§1, §4.1, §5.6).
+Core / Finance / HR / Procurement appear as seeded lookup lists; postings by other modules (purchase bills, opening
+balances) are shown as "external" entries for reconciliation only.
 
 ## 2. Data model (§3)
-| Entity | Key fields (mock) |
+| Entity | Mock |
 |---|---|
-| AssetClass §3.1 | code, name, foreignName, method (SL / DB / DBSL / None), lifeMonths, decliningFactor, periodicity (M/Q/Y), prorata (None / ConstantPeriods / ByDays), assetAcct, accumAcct, expenseAcct, gainAcct, lossAcct, revalSurplusAcct, isDepreciable, isActive |
-| DepreciationArea §3.2 | single seeded row `01 — Local GAAP`, UI hidden |
-| AssetLocation §3.3 | code, name, parentId (tree), isActive |
-| AssetGroup §3.4 | code, name, isActive |
-| Asset §3.5 | code (FA-######), name, description, class, group, location, custodian, serial, tag (unique), partner, sourceDocRef, acquisitionDate, depStartDate, originalValue, salvage, method/life/periodicity/prorata/factor (copied from class, overridable), state, isLegacy, importedAccum, costCenter, project. Book value is derived, never stored. |
-| DepLine §3.6 | seq, date, amount, accum, remaining, isPosted, runId, days |
-| AssetTransaction §3.7 | number, type (Capitalization / Revaluation / Transfer / Pause / Resume / Sale / Disposal / Adjustment), date, amount, from/to value, from/to location/custodian/cost center, journal |
-| DepreciationRun §3.8 | number (DPR), periodEnd, class scope, status (Draft / Posted / Reversed), lines |
+| AssetClass §3.1 | code, name, foreignName, **kind** (Tangible / Intangible «إطفاء» / Land / LowValue), method, life, factor, periodicity, prorata, isDepreciable, isActive |
+| AssetClassAreaAccounts §3.1.1 | six account codes per (class × area); class screen edits the default area 01 |
+| DepreciationArea §3.2 / AssetAreaSetting §3.2.1 | one seeded area `01 Local GAAP`; per-asset area rows written at capitalization; engine reads the denormalized copy on Asset |
+| AssetLocation §3.3 / AssetGroup §3.4 | tree / flat |
+| Asset §3.5 | + capitalizationDate, importCutoffDate, remainingLifeAtImport (mandatory for legacy), bill ref / line / sequence (§5.6.6) |
+| AssetDepreciationLine §3.6 | type Depreciation / Manual / ToDate, fraction (1, f, or completion), days, isPosted, run / tx link |
+| AssetTransaction §3.7 | 18 types incl. reversals, docType, from/to state, accumulatedAtEvent, toDateAmount, isReversed / reversedTxId, module + external entries |
+| AssetDepreciationRun §3.8 | periodStart/End, area, class scope, Draft / Posted / Reversed, reversedAt = PeriodEnd |
+| AssetMaintenance (§9 ph. 5) | mock fields; capitalized orders post an AddCost |
 
-## 3. Status lifecycle (§4)
-Asset: `Draft → Running` (capitalize) · `Running ⇄ Paused` · `Running → Running` (revalue, transfer, life change) · `Running/Paused → Sold | Disposed` · `Running → Closed` (last line posted; Closed can still be disposed).
-Run: `Draft (simulation) → Posted → Reversed`.
+## 3. Status lifecycle (§4.1)
+Draft → Running (Capitalize) · Draft → Cancelled · Running → Draft (UndoCapitalization, nothing posted) ·
+Running ⇄ Paused · Running → Closed (last line) · Closed → Running (run reversal, upward revaluation, AddCost, life change) ·
+Running/Paused/Closed → Sold/Disposed · Sold/Disposed → FromState (ReverseSale / ReverseDisposal) · Sold/Disposed/Cancelled final.
+Runs: Draft (simulation) → Posted → Reversed.
 
-## 4. Business rules (implemented as validations)
+## 4. Business rules (validations)
 | # | Rule | Where |
 |---|---|---|
-| R1 | Capitalize requires class, original > 0, salvage < original, start date, class accounts present and postable | `lifecycle.capitalize` |
-| R2 | Delete only Draft, non-legacy, without posted lines | `lifecycle.canDelete` |
-| R3 | Sale / disposal remove all unposted lines and create the closing entry | `sell`, `dispose` |
-| R4 | Paused assets are excluded from runs; resume regenerates from the resume date | `simulateRun`, `resume` |
-| R5 | Regeneration never touches posted lines | `generateSchedule` |
-| R6 | Rounding difference goes to the last line; Σ lines = base − posted − imported | `generateSchedule` |
-| R7 | A period/scope can be posted once (guard on period × class) and lines are re-checked at posting | `postRun` |
-| R8 | Reversal creates a reversing entry and returns lines to planned; later runs must be reversed first | `reverseRun` |
-| R9 | Class save rejects missing / non-existent / non-postable accounts | `classAccountErrors` |
-| R10 | Tag number unique when filled | asset form |
-| R12 | Maintenance cost may be capitalized only for running/paused assets and when ≥ capitalization threshold; regenerates unposted lines | `capitalizeError`, `completeMaint` |
-| R11 | After capitalization, value and depreciation settings change only through actions | asset form |
+| R1 | Capitalize: class, original > 0, salvage < original, start date, accounts complete & postable, life % period = 0, LowValue threshold | `capitalize` |
+| R2 | Delete only Draft, non-legacy, no posted line, no transaction — else Cancel | `canDelete` |
+| R3 | Legacy: cut-off is a period end; remaining life mandatory, multiple of the period; accum ≤ base; 0 life with value > salvage rejected | asset form |
+| R4 | Event dates must be after the last posted line (no retroactive events) | `notBefore` |
+| R5 | Cost-center transfer is effective-dated; run lines take the center as of LineDate; reversible while no later posted line | §5.5 |
+| R6 | Runs: no overlap (all-classes overlaps any class, one Draft max), no gaps, LIFO reversal, no reversal under later dependent events, reversal dated PeriodEnd | §3.8.1 |
+| R7 | Sell/Dispose: prior periods posted (PostDepreciationFirst), ToDate line per class proration inside the exit entry, remaining lines cancelled | §5.6.1 |
+| R8 | AddCost / ReduceCost / Manual regenerate unposted lines over the unchanged remaining periods; ReduceCost below accumulated rejected; Manual ≤ remaining depreciable | §5.6.2–5.6.4 |
+| R9 | Revaluation upward only (233); impairment (238) separate | §5.3 |
+| R10 | Purchase line with quantity N → N drafts, integer N, last takes rounding, idempotent per bill + line | §5.6.6 |
+| R11 | Maintenance capitalization ≥ threshold (5,000,000) → AddCost; capitalized orders are one-off | owner-approved |
 
 ## 5. Permissions (§6.3)
-Roles: viewer (view) · user (view + create/update) · accountant (+ post, reverse) · settings admin (classes, locations, groups) · super admin (all). Switchable from the user menu; gates the buttons.
+viewer · user · accountant (+ post, reverse) · settings admin · super admin — role switcher in the user menu gates buttons.
 
-## 6. Dashboard KPIs
-Assets in books, total original value, accumulated depreciation, book value, depreciation posted this year; value by class; assets by state; alerts (current period not posted, drafts awaiting capitalization, paused assets, unposted simulations); latest transactions.
+## 6. KPIs
+Assets in books, original value, accumulated depreciation, book value, 2026 depreciation posted; value by class; assets by state; alerts.
 
 ## 7. Integrations (placeholders)
-Journal posting (shown as journal tables), purchase bill reference (`sourceDocRef`), Excel export / print buttons, attachments.
+Purchase bill / credit-note references (no module entry when present), opening-balance batch (239, external entry), Excel export, print, attachments.
 
 ## 8. Screen list
-| Route | Screen | Plan |
-|---|---|---|
-| `#/` | Dashboard | §9 phase 5 |
-| `#/assets` | Asset register — state tabs, class/group/branch filters, totals | §3.5 |
-| `#/assets/new`, `#/assets/:id` | Asset card (Type A): header, tabs Basic / Value & depreciation board / Location & custody / Event log / Attachments; actions Capitalize, Pause, Resume, Revalue, Life change, Transfer, Sell, Dispose, Tag label, Delete | §3.5–3.7, §4, §6.2 |
-| `#/runs`, `#/runs/new`, `#/runs/:id` | Depreciation runs: simulate, re-simulate, post, reverse, delete draft; lines + journal | §3.8, §5.4 |
-| `#/transactions` | Asset transactions (audit trail) with type tabs and journal modal | §3.7 |
-| `#/maintenance`, `#/maintenance/:id` | Maintenance orders (phase 5 item; fields are mock assumptions — see WORKLOG) | §9 phase 5 |
-| `#/reports` | Register, Forecast, By location/custody, Disposals, GL reconciliation | §7 |
-| `#/classes` | Asset classes (Type B) | §3.1 |
-| `#/locations` | Locations tree (Type B) | §3.3 |
-| `#/groups` | Asset groups (Type B) | §3.4 |
-| `#/settings` | Permissions matrix + document types/numbering | §6.3, §3.10 |
+| Route | Screen |
+|---|---|
+| `#/` | Dashboard |
+| `#/assets` | Register — state tabs incl. Cancelled, filters, "from a purchase-bill line" (N drafts) |
+| `#/assets/:id` | Asset card — tabs Basic / Value & schedule / Location & custody (+ cost-center history) / **Asset ledger** / Maintenance / Events / Attachments; all §4.1 and §5.6 actions |
+| `#/runs`, `#/runs/new`, `#/runs/:id` | Depreciation runs with §3.8.1 checks |
+| `#/transactions` | Audit trail grouped by event family, reversal tags, reverse actions in the detail modal |
+| `#/maintenance`, `#/maintenance/:id` | Maintenance orders |
+| `#/reports` | Register (asOf), Roll-forward, Asset ledger, Forecast, By location / custody, Disposals, GL reconciliation (asOf) |
+| `#/classes`, `#/locations`, `#/groups` | Settings masters |
+| `#/settings` | Thresholds, §12 decisions, permissions, document types and event mapping |
 
-## 9. Open points
-See `WORKLOG.md` (second entry): proposed account codes, IT class accounts, cost-center transfer entry amount, legacy life convention, and the missing project brief / discovery decisions.
+## 9. Build order
+Done — see `docs/roadmap.md`. Next: owner review and the open §12 decisions.
