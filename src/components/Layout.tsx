@@ -1,7 +1,7 @@
 import {
   Archive, ArrowLeftRight, BarChart3, Bell, BellRing, Boxes, Building2, ChevronDown, ChevronLeft, ClipboardList, Cog, Factory,
   FolderKanban, Globe, Handshake, Landmark, Languages, LayoutDashboard, MapPin, Menu, Monitor, Package, Plus, Search,
-  Settings, Shield, ShoppingBag, ShoppingCart, Store, Tags, TrendingDown, TrendingUp, Truck, Users, Layers, UserCog,
+  Settings, Shield, ShoppingBag, ShoppingCart, Store, Tags, TrendingDown, TrendingUp, Truck, Users, Layers, UserCog, Wrench,
   type LucideIcon,
 } from 'lucide-react'
 import { useState, type ReactNode } from 'react'
@@ -22,6 +22,7 @@ export const assetNav: { to: string; label: string; icon: LucideIcon; section?: 
   { to: '/assets', label: 'سجل الأصول', icon: Package },
   { to: '/runs', label: 'دورات الإهلاك', icon: TrendingDown },
   { to: '/transactions', label: 'حركات الأصول', icon: ArrowLeftRight },
+  { to: '/maintenance', label: 'الصيانة', icon: Wrench },
   { to: '/reports', label: 'التقارير', icon: BarChart3 },
   { to: '/classes', label: 'فئات الأصول', icon: Tags, section: 'الإعدادات' },
   { to: '/locations', label: 'المواقع', icon: MapPin },

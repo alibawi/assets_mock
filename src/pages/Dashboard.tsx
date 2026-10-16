@@ -1,4 +1,5 @@
-import { AlertTriangle, CirclePause, FileClock, History, Package, Plus, TrendingDown } from 'lucide-react'
+import { AlertTriangle, CirclePause, FileClock, History, Package, Plus, TrendingDown, Wrench } from 'lucide-react'
+import { TODAY } from '../data/lifecycle'
 import { Link, useNavigate } from 'react-router-dom'
 import { PageHeader } from '../components/Layout'
 import { txSummary } from '../components/Shared'
@@ -31,11 +32,13 @@ export default function Dashboard() {
   const drafts = db.assets.filter((a) => a.state === 'draft')
   const paused = db.assets.filter((a) => a.state === 'paused')
   const draftRuns = db.runs.filter((r) => r.status === 'draft')
+  const overdue = db.maintenance.filter((m) => (m.status === 'planned' || m.status === 'inProgress') && m.plannedDate < TODAY)
 
   const alerts = [
     !octPosted && { icon: TrendingDown, tone: 'text-amber-600 bg-amber-50', text: `لم تُرحَّل دورة إهلاك ${periodLabel('2026-10')} بعد`, to: '/runs/new' },
     drafts.length > 0 && { icon: Package, tone: 'text-gray-600 bg-gray-100', text: `${drafts.length} أصول بحالة مسودة بانتظار الرسملة`, to: '/assets?state=draft' },
     paused.length > 0 && { icon: CirclePause, tone: 'text-amber-600 bg-amber-50', text: `${paused.length} أصول موقوف إهلاكها`, to: '/assets?state=paused' },
+    overdue.length > 0 && { icon: Wrench, tone: 'text-red-600 bg-red-50', text: `${overdue.length} أوامر صيانة متأخرة عن موعدها`, to: '/maintenance?tab=overdue' },
     draftRuns.length > 0 && { icon: FileClock, tone: 'text-sky-600 bg-sky-50', text: `${draftRuns.length} دورة إهلاك محاكاة غير مُرحّلة`, to: '/runs' },
   ].filter(Boolean) as { icon: typeof Package; tone: string; text: string; to: string }[]
 

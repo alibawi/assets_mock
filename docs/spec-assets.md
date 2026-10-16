@@ -55,6 +55,7 @@ Journal posting (shown as journal tables), purchase bill reference (`sourceDocRe
 | `#/assets/new`, `#/assets/:id` | Asset card (Type A): header, tabs Basic / Value & depreciation board / Location & custody / Event log / Attachments; actions Capitalize, Pause, Resume, Revalue, Life change, Transfer, Sell, Dispose, Tag label, Delete | §3.5–3.7, §4, §6.2 |
 | `#/runs`, `#/runs/new`, `#/runs/:id` | Depreciation runs: simulate, re-simulate, post, reverse, delete draft; lines + journal | §3.8, §5.4 |
 | `#/transactions` | Asset transactions (audit trail) with type tabs and journal modal | §3.7 |
+| `#/maintenance`, `#/maintenance/:id` | Maintenance orders (phase 5 item; fields are mock assumptions — see WORKLOG) | §9 phase 5 |
 | `#/reports` | Register, Forecast, By location/custody, Disposals, GL reconciliation | §7 |
 | `#/classes` | Asset classes (Type B) | §3.1 |
 | `#/locations` | Locations tree (Type B) | §3.3 |

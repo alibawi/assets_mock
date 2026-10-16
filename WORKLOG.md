@@ -55,3 +55,24 @@
 **Issues / deferred:** project brief and discovery notes still missing; phase-4 items (purchase-bill listener, Excel legacy import) and phase-5 items (multiple areas, batch assets, physical count, maintenance) are not in the mock.
 
 **Next step:** owner review; then gap list from the project brief.
+
+---
+
+## 2026-10-16 — Maintenance screen restored (owner request)
+
+**Module / screen:** Fixed Assets — الصيانة (`#/maintenance`, `#/maintenance/:id`, asset card tab).
+
+**Completed**
+- Maintenance orders: list with tabs (open, overdue, planned, in progress, done, cancelled, all), type filter, KPIs (open, overdue, due in 30 days, cost done in 2026).
+- Order page: asset, type (preventive / corrective / inspection), vendor, planned date, estimated cost, recurrence, work description; actions start, complete (actual date + cost), cancel; journal tab; other orders of the same asset.
+- Completing an order books the cost (debit maintenance expense on the asset's cost center / credit suppliers) and, for recurring orders, schedules the next one automatically.
+- Asset card: new "الصيانة" tab + "أمر صيانة جديد" action; dashboard alert for overdue orders; 8 seeded orders.
+- Store fix: `run()` now builds on the latest state, so two consecutive calls in one event no longer overwrite each other.
+
+**Key design decisions (assumptions — the plan only names "جدولة الصيانة (AssetMaintenance)" in phase 5)**
+- Fields, statuses and recurrence are mock assumptions. Maintenance cost is always expensed (no capitalization) and does not change the asset state.
+- Expense account `3600000001 — مصروف صيانة الموجودات` is a placeholder marked "مقترح".
+
+**Verification:** `npm run build` passes; zero console errors after reload; completed MNT-2026-0005 (journal created, next order MNT-2026-0009 planned for 2027-01-16); created a new order from `?asset=a8` and saved it; asset card tab lists the orders.
+
+**Next step:** owner review of the maintenance fields.

@@ -1,6 +1,6 @@
 import {
   ArrowLeftRight, Barcode, CheckCircle2, CirclePause, CirclePlay, Clock3, FileText, History, Info, MapPin, MoreHorizontal,
-  Paperclip, Trash2, TrendingDown, TrendingUp, Upload, Wallet,
+  Paperclip, Plus, Trash2, TrendingDown, TrendingUp, Upload, Wallet, Wrench,
 } from 'lucide-react'
 import { useEffect, useMemo, useState } from 'react'
 import { Link, useNavigate, useParams } from 'react-router-dom'
@@ -8,13 +8,13 @@ import { PageHeader } from '../components/Layout'
 import { TxModal, txSummary } from '../components/Shared'
 import { Badge, Card, Confirm, Dropdown, Empty, Field, FormGrid, Modal, NumInput, ReadOnly, SaveSplit, Select, Tabs } from '../components/ui'
 import { accumOf, bookValue, depBase, generateSchedule, MPP } from '../data/calc'
-import { iqd, methodLabel, money, periodicityLabel, prorataLabel, stateLabel, stateTone, txLabel, txTone } from '../data/format'
+import { iqd, maintStatusLabel, maintStatusTone, maintTypeLabel, methodLabel, money, periodicityLabel, prorataLabel, stateLabel, stateTone, txLabel, txTone } from '../data/format'
 import { canDelete, capitalize, dispose, nextAssetCode, nextNo, pause, resume, revalue, sell, TODAY, transfer } from '../data/lifecycle'
 import { useLookups } from '../data/lookups'
 import { useStore } from '../data/store'
 import type { Asset, AssetTx, DepLine, DepMethod, Periodicity, Prorata } from '../data/types'
 
-type Tab = 'general' | 'dep' | 'location' | 'events' | 'files'
+type Tab = 'general' | 'dep' | 'location' | 'maint' | 'events' | 'files'
 type Action = 'capitalize' | 'pause' | 'resume' | 'revalue' | 'transfer' | 'sell' | 'dispose' | 'life' | 'delete' | 'tag'
 
 const blank = (): Asset => ({
@@ -102,6 +102,7 @@ export default function AssetForm() {
     if (!k || a.originalValue <= 0) return []
     return generateSchedule({ ...db, lines: [] }, a, k)
   }, [db, a, draft])
+  const maint = db.maintenance.filter((x) => x.assetId === a.id).sort((x, y) => y.plannedDate.localeCompare(x.plannedDate))
   const runNo = (rid: string | null) => db.runs.find((r) => r.id === rid)?.number
 
   const err = (f: string) => (errors.includes(f) ? 'ring-1 ring-red-400 rounded-md' : '')
@@ -138,6 +139,7 @@ export default function AssetForm() {
                   { label: 'نقل (موقع / عهدة / مركز كلفة)', icon: ArrowLeftRight, onClick: () => setAction('transfer'), disabled: !active || !can('update') },
                   { label: 'بيع', icon: Wallet, onClick: () => setAction('sell'), disabled: !active || !can('post') },
                   { label: 'استبعاد بلا مقابل', icon: Trash2, onClick: () => setAction('dispose'), disabled: !(active || a.state === 'closed') || !can('post') },
+                  { label: 'أمر صيانة جديد', icon: Wrench, onClick: () => nav(`/maintenance/new?asset=${a.id}`), disabled: !(active || a.state === 'closed') || !can('create') },
                   { label: 'طباعة ملصق الأصل', icon: Barcode, onClick: () => setAction('tag') },
                   { label: 'حذف', icon: Trash2, danger: true, onClick: () => setAction('delete'), disabled: !!canDelete(db, a) || !can('delete') },
                 ]}
@@ -177,6 +179,7 @@ export default function AssetForm() {
             { id: 'general', label: 'البيانات الأساسية', icon: Info },
             { id: 'dep', label: 'القيمة وجدول الإهلاك', icon: TrendingDown, count: board.length || undefined },
             { id: 'location', label: 'الموقع والعهدة', icon: MapPin },
+            { id: 'maint', label: 'الصيانة', icon: Wrench, count: maint.length || undefined },
             { id: 'events', label: 'سجل الأحداث', icon: History, count: txs.length },
             { id: 'files', label: 'المرفقات', icon: Paperclip },
           ]}
@@ -294,6 +297,29 @@ export default function AssetForm() {
                 </div>
               )}
             </FormGrid>
+          )}
+
+          {tab === 'maint' && (
+            <div>
+              {(active || a.state === 'closed') && can('create') && (
+                <div className="mb-3"><button type="button" className="btn btn-primary" onClick={() => nav(`/maintenance/new?asset=${a.id}`)}><Plus className="h-4 w-4" />أمر صيانة</button></div>
+              )}
+              {maint.length ? (
+                <table className="tbl">
+                  <thead><tr><th>رقم الأمر</th><th>النوع</th><th>الجهة المنفذة</th><th>الموعد</th><th>الإنجاز</th><th className="!text-end">التكلفة</th><th>الحالة</th></tr></thead>
+                  <tbody>
+                    {maint.map((x) => (
+                      <tr key={x.id} className="cursor-pointer" onClick={() => nav(`/maintenance/${x.id}`)}>
+                        <td dir="ltr" className="text-end text-navy">{x.number}</td><td>{maintTypeLabel[x.type]}</td><td>{L.partnerName(x.partnerId)}</td>
+                        <td dir="ltr" className="text-end">{x.plannedDate}</td><td dir="ltr" className="text-end">{x.doneDate ?? '—'}</td>
+                        <td className="num">{money(x.cost)}</td><td><Badge tone={maintStatusTone[x.status]}>{maintStatusLabel[x.status]}</Badge></td>
+                      </tr>
+                    ))}
+                  </tbody>
+                  <tfoot><tr><td colSpan={5}>إجمالي المنجز:</td><td className="num">{money(maint.filter((x) => x.status === 'done').reduce((s, x) => s + x.cost, 0))}</td><td /></tr></tfoot>
+                </table>
+              ) : <Empty text="لا توجد أوامر صيانة لهذا الأصل" />}
+            </div>
           )}
 
           {tab === 'events' && (

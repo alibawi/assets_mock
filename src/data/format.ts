@@ -1,4 +1,4 @@
-import type { AssetState, DepMethod, Periodicity, Prorata, RoleId, RunStatus, TxType } from './types'
+import type { AssetState, DepMethod, MaintStatus, MaintType, Periodicity, Prorata, RoleId, RunStatus, TxType } from './types'
 
 export type Tone = 'gray' | 'green' | 'amber' | 'red' | 'blue'
 
@@ -28,6 +28,10 @@ export const txLabel: Record<TxType, string> = {
 export const txTone: Record<TxType, Tone> = {
   capitalization: 'green', revaluation: 'blue', transfer: 'gray', pause: 'amber', resume: 'green', sale: 'red', disposal: 'red', adjustment: 'gray',
 }
+
+export const maintTypeLabel: Record<MaintType, string> = { preventive: 'وقائية', corrective: 'علاجية', inspection: 'فحص دوري' }
+export const maintStatusLabel: Record<MaintStatus, string> = { planned: 'مخطّطة', inProgress: 'قيد التنفيذ', done: 'منجزة', cancelled: 'ملغاة' }
+export const maintStatusTone: Record<MaintStatus, Tone> = { planned: 'blue', inProgress: 'amber', done: 'green', cancelled: 'gray' }
 
 export const roleLabel: Record<RoleId, string> = {
   superadmin: 'مدير النظام',

@@ -1,7 +1,7 @@
 // State machine — plan §4 (AssetStateManager) and journal entries — plan §5.3.
 // Every function mutates a draft DB and returns an error message, or null on success.
 import { accumOf, bookValue, generateSchedule, grossOf, monthEnd, postedLines, runJournal, simulateRun } from './calc'
-import type { Asset, AssetTx, DB, JournalLine, TxType } from './types'
+import type { Asset, AssetTx, DB, JournalLine, Maintenance, TxType } from './types'
 
 export const TODAY = '2026-10-16'
 export const CASH_ACCT = '1200000001'
@@ -221,6 +221,69 @@ export function reverseRun(db: DB, runId: string): string | null {
     if (a.state === 'closed') a.state = 'running'
   })
   r.status = 'reversed'
+  return null
+}
+
+// ---- Maintenance (plan §9 phase 5 — the rules below are mock assumptions) ----------------
+
+export const MAINT_EXPENSE_ACCT = '3600000001'
+
+export function maintJournal(db: DB, m: Maintenance): JournalLine[] {
+  if (!m.cost) return []
+  const a = db.assets.find((x) => x.id === m.assetId)
+  const d = `صيانة ${a?.code ?? ''} — ${m.number}`
+  const cc = db.costCenters.find((c) => c.id === a?.costCenterId)?.name
+  return [
+    { account: acc(db, MAINT_EXPENSE_ACCT), desc: d, debit: m.cost, credit: 0, costCenter: cc },
+    { account: acc(db, SUPPLIER_ACCT), desc: d, debit: 0, credit: m.cost },
+  ]
+}
+
+export function maintValidate(db: DB, m: Maintenance): string | null {
+  if (!m.assetId) return 'يجب تحديد الأصل'
+  const a = db.assets.find((x) => x.id === m.assetId)
+  if (!a || a.state === 'sold' || a.state === 'disposed' || a.state === 'draft') return 'الصيانة متاحة للأصول المُرسملة غير المستبعدة فقط'
+  if (!m.plannedDate) return 'تاريخ الصيانة المخطط مطلوب'
+  if (!m.partnerId) return 'الجهة المنفذة مطلوبة'
+  if (m.cost < 0) return 'التكلفة غير صحيحة'
+  return null
+}
+
+export function startMaint(db: DB, id: string): string | null {
+  const m = db.maintenance.find((x) => x.id === id)!
+  if (m.status !== 'planned') return 'يمكن بدء أوامر الصيانة المخطّطة فقط'
+  m.status = 'inProgress'
+  return null
+}
+
+const addMonths = (date: string, n: number) => {
+  const d = new Date(date + 'T00:00:00Z')
+  d.setUTCMonth(d.getUTCMonth() + n)
+  return d.toISOString().slice(0, 10)
+}
+
+/** Completes an order, books its cost as an expense and, for recurring orders, schedules the next one. */
+export function completeMaint(db: DB, id: string, doneDate: string, cost: number): string | null {
+  const m = db.maintenance.find((x) => x.id === id)!
+  if (m.status !== 'planned' && m.status !== 'inProgress') return 'أمر الصيانة مغلق'
+  if (cost <= 0) return 'أدخل التكلفة الفعلية'
+  m.cost = cost
+  m.status = 'done'
+  m.doneDate = doneDate
+  m.journal = maintJournal(db, m)
+  if (m.intervalMonths > 0) {
+    db.maintenance.push({
+      ...m, id: `m${Date.now().toString(36)}`, number: nextNo('MNT', db.maintenance.map((x) => x.number)),
+      plannedDate: addMonths(doneDate, m.intervalMonths), doneDate: null, status: 'planned', journal: [],
+    })
+  }
+  return null
+}
+
+export function cancelMaint(db: DB, id: string): string | null {
+  const m = db.maintenance.find((x) => x.id === id)!
+  if (m.status === 'done' || m.status === 'cancelled') return 'لا يمكن إلغاء أمر مغلق'
+  m.status = 'cancelled'
   return null
 }
 

@@ -1,8 +1,8 @@
 // Demo data. Chart-of-accounts codes follow plan §3.9; codes marked "مقترح" are placeholders the
 // accountant still has to approve (plan §12, open decision 1).
 import { bookValue, generateSchedule, monthEnd } from './calc'
-import { capitalize, createRun, dispose, pause, postRun, revalue, sell, transfer } from './lifecycle'
-import type { Account, Asset, AssetClass, AssetGroup, AssetLocation, CostCenter, DB, Employee, Partner } from './types'
+import { capitalize, createRun, dispose, maintJournal, pause, postRun, revalue, sell, transfer } from './lifecycle'
+import type { Account, Asset, AssetClass, AssetGroup, AssetLocation, CostCenter, DB, Employee, Maintenance, Partner } from './types'
 
 const accounts: Account[] = [
   { code: '1100000000', name: 'الموجودات الثابتة', postable: false },
@@ -26,6 +26,7 @@ const accounts: Account[] = [
   { code: '3700000002', name: 'اندثار آلات ومعدات', postable: true },
   { code: '3700000003', name: 'اندثار وسائل نقل وانتقال', postable: true },
   { code: '3700000004', name: 'اندثار أثاث وأجهزة مكاتب', postable: true },
+  { code: '3600000001', name: 'مصروف صيانة الموجودات (مقترح)', postable: true },
   { code: '3800000001', name: 'خسائر بيع واستبعاد موجودات ثابتة (مقترح)', postable: true },
   { code: '4900000001', name: 'أرباح بيع موجودات ثابتة (مقترح)', postable: true },
 ]
@@ -128,7 +129,7 @@ function buildAssets(): Asset[] {
 export function seed(): DB {
   const db: DB = {
     classes, groups, locations, employees, partners, costCenters, accounts,
-    assets: buildAssets(), lines: [], txs: [], runs: [], role: 'superadmin',
+    assets: buildAssets(), lines: [], txs: [], runs: [], maintenance: [], role: 'superadmin',
   }
   db.classes = structuredClone(classes)
 
@@ -164,5 +165,29 @@ export function seed(): DB {
     postRun(db, r.id, monthEnd(ym))
     after[m]?.forEach((f) => f(db))
   }
+  seedMaintenance(db)
   return db
+}
+
+function seedMaintenance(db: DB) {
+  type M = [string, Maintenance['type'], string, string, number, number, Maintenance['status'], string]
+  // asset, type, partner, planned date, cost, interval (months), status, notes
+  const rows: M[] = [
+    ['a5', 'preventive', 'p5', '2026-03-10', 1200000, 6, 'done', 'صيانة دورية كل 500 ساعة تشغيل'],
+    ['a4', 'inspection', 'p4', '2026-04-20', 2500000, 12, 'done', 'فحص سنوي لخط التعبئة'],
+    ['a6', 'preventive', 'p3', '2026-07-05', 850000, 3, 'done', 'تبديل زيت وفلاتر'],
+    ['a5', 'corrective', 'p5', '2026-09-03', 4750000, 0, 'inProgress', 'عطل في المحرك — بانتظار قطع الغيار'],
+    ['a6', 'preventive', 'p3', '2026-10-05', 850000, 3, 'planned', 'تبديل زيت وفلاتر'],
+    ['a17', 'inspection', 'p9', '2026-11-15', 600000, 6, 'planned', 'فحص البطارية ومنظومة الرفع'],
+    ['a20', 'preventive', 'p10', '2026-10-28', 950000, 4, 'planned', 'صيانة ضاغطة الهواء'],
+    ['a21', 'preventive', 'p11', '2026-04-01', 1600000, 6, 'cancelled', 'أُلغيت — مشمولة بالضمان'],
+  ]
+  rows.forEach(([assetId, type, partnerId, plannedDate, cost, intervalMonths, status, notes], i) => {
+    const m: Maintenance = {
+      id: `m${i + 1}`, number: `MNT-2026-${String(i + 1).padStart(4, '0')}`, assetId, type, partnerId, plannedDate,
+      doneDate: status === 'done' ? plannedDate : null, cost, intervalMonths, status, notes, journal: [],
+    }
+    if (status === 'done') m.journal = maintJournal(db, m)
+    db.maintenance.push(m)
+  })
 }

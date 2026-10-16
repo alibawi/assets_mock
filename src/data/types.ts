@@ -132,6 +132,24 @@ export interface DepRun {
   notes: string
 }
 
+/** Maintenance scheduling — plan §9 phase 5 (AssetMaintenance). Fields are mock assumptions. */
+export type MaintType = 'preventive' | 'corrective' | 'inspection'
+export type MaintStatus = 'planned' | 'inProgress' | 'done' | 'cancelled'
+export interface Maintenance {
+  id: string
+  number: string
+  assetId: string
+  type: MaintType
+  partnerId: string
+  plannedDate: string
+  doneDate: string | null
+  cost: number
+  intervalMonths: number // 0 = one-off; otherwise the next order is scheduled on completion
+  status: MaintStatus
+  notes: string
+  journal: JournalLine[]
+}
+
 export interface DB {
   classes: AssetClass[]
   groups: AssetGroup[]
@@ -144,5 +162,6 @@ export interface DB {
   lines: DepLine[]
   txs: AssetTx[]
   runs: DepRun[]
+  maintenance: Maintenance[]
   role: RoleId
 }
