@@ -1,6 +1,6 @@
 import { BookOpenCheck, CalendarRange, Download, Layers3, MapPin, Printer, Scale, Table2, Trash2 } from 'lucide-react'
 import { Fragment, useState } from 'react'
-import { Link } from 'react-router-dom'
+import { Link, useSearchParams } from 'react-router-dom'
 import { PageHeader } from '../components/Layout'
 import { TxModal } from '../components/Shared'
 import { Field, Select, Tabs } from '../components/ui'
@@ -16,7 +16,9 @@ type R = 'register' | 'forecast' | 'location' | 'disposals' | 'recon' | 'ledger'
 
 export default function Reports() {
   const { toast } = useStore()
-  const [r, setR] = useState<R>('register')
+  const [params, setParams] = useSearchParams()
+  const r = (params.get('r') as R) || 'register'
+  const setR = (v: R) => setParams({ r: v })
   return (
     <div>
       <PageHeader
