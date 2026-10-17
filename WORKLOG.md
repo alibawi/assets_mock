@@ -196,3 +196,21 @@
 **Verification:** `npm run build` passes; `npm run check` 51 checks pass (new: direct sale refused, path B draft invoice, invoice guards 11a, clearing nets to zero T11, ReverseSale not manual, cancel → ReverseSale T30, revaluation document post/reverse, document reversal unblocks a run reversal, import errors block commit, clean import commits and reconciles, import reverse). Browser: all new pages render, zero console errors; sold FA-000006 via «بيع» → invoice SI-2026-0002 → post (640,000 to date, gain 640,000, clearing nets) → cancel (back to Running); import file → 2 row errors → removed → committed 4 assets; revaluation document ARV-2026-0002 posted and reversed; three drafts capitalized by multi-select.
 
 **Next step:** owner review; open decision 8 (impairment account) and the placeholder accounts.
+
+---
+
+## 2026-10-17 — Accounts aligned with SAP B1 account determination (owner approved)
+
+**Module / screen:** chart of accounts, asset classes, journal entries, reconciliation, settings, addendum.
+
+**Completed**
+- Researched SAP Business One `FAAccountDetermination` (19 account roles, assigned per asset class) and mapped them to the plan's accounts (addendum ب.000).
+- Owner approved: impairment loss on its own account (SAP «Revaluation Loss Account») — closes decision 8; manual (unplanned) depreciation on separate expense and accumulated accounts (SAP «Unplanned Depreciation» / «Accumulated Unplanned Depr.»).
+- Class gets three new per-area accounts (required by the completeness rule); proposed codes 3800000002, 3710000001, 1191000001..05.
+- Manual depreciation posts to the unplanned accounts; impairment posts to the impairment-loss account; sale/disposal close both accumulated accounts; reconciliation shows the unplanned accumulated accounts separately (zero difference).
+- Data version 8.
+
+**Verification:** `npm run build` passes; `npm run check` 58 checks pass (new: manual → 3710/1191, impairment → 3800000002, sale after manual closes both contra accounts, reconciliation zero).
+
+**Next step:** accountant approval of the proposed numbers.
+
