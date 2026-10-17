@@ -167,3 +167,32 @@
 **Verification:** `npm run build` passes; planted old data (v5) in localStorage → reload reseeded v6 (31 assets) and removed the legacy key; asset kinds, Cancel / UndoCapitalization, the seven reports (incl. Asset Ledger and Roll-forward), document types 230–243 and the reset button all visible; zero console errors.
 
 **Next step:** owner to view the branch (or approve a PR/merge into main).
+
+---
+
+## 2026-10-17 — Plan update «قرارات حُسمت (2026-10-17)» — work moves to `main`
+
+**Module / screen:** Fixed Assets — sales invoice, transaction documents, transactions log, legacy import, asset card, register, settings.
+
+**Completed**
+- Git: on owner's instruction work continues on `main` (fast-forwarded to PR #2); copied the updated plan (ar + en).
+- §5.6.9 Sale only through a sales invoice: mock Sales items/customers/invoices; ENKI-style invoice page (الشريك التجاري، المؤسسة، العملة، تاريخ الفاتورة/الترحيل، lines المادة/الأصل/الكمية/السعر، totals, حفظ/ترحيل/إلغاء). A fixed-asset item shows a conditional «الأصل» field (eligible assets only), quantity locked to 1, price suggested = book value, revenue account auto = class `AssetSaleClearingAcctCode`. Path B: «بيع» on the asset card creates a Draft invoice. Posting: guards (state, AssetAlreadyInSaleInvoice, qty 1, item without AssetId, PostDepreciationFirst), ToDate line, Sale transaction with the invoice as SourceDoc, invoice entry (Dr customer / Cr clearing) + exit entry 236 (Dr clearing + accum [+ loss] / Cr asset [+ gain]). Cancelling the invoice runs ReverseSale; ReverseSale is not a manual action.
+- New class account `saleClearingAcct` (per area, required by the completeness rule); proposed code `1300000001 — تسوية بيع الأصول (مقترح)`. Reconciliation shows the clearing account, which nets to zero.
+- §8 Type A documents with their own number, post and reverse: Revaluation/Impairment (one document, direction 233/238), Cost adjustment (Addition/Reduction 240/241), Manual depreciation (242), Transfer (location/custodian 234 or cost center 237), Disposal (235). Lines per asset; each line writes a transaction carrying the document number and SourceDoc*. Reversal reverses every line (last first) with reversing rows dated at the original event; refused while later depreciation is posted — this provides the missing way to clear dependent events before a run reversal.
+- Unified read-only «سجل حركات الأصول» (filters type / asset / date, link to source document) and the same table as the asset-card tab.
+- «استيراد الأصول القديمة» (batch 239, Type A): mock Excel upload → preview with the §9 phase-4 row errors/warnings → commit (blocked by any error; creates Running/Closed legacy assets) → reverse (blocked once a line is posted or another transaction exists). Batch totals vs ledger at cut-off shown as a warning. The go-live batch AOB-2025-0001 is seeded as a committed batch; manual legacy entry removed from the asset form.
+- Capitalize / pause / resume / adjustment (life change) stay dialogs; capitalize also by multi-select on the register.
+- §6.3 permission groups per transaction page + AssetOpeningBalance + read-only AssetTransaction; accountant has Post/Reverse on all.
+- Settings: decisions a–e (settled) and 1–11 (8 still open). Maintenance capitalization now posts a cost-adjustment document (240).
+- Data version 7 (browsers reseed).
+
+**Key design decisions / interpretations**
+1. The mock has a minimal Sales module (items, customers, invoices) only to demonstrate §5.6.9; customer receivable `1210000001` and sales revenue `4100000001` are placeholders (مقترح).
+2. Transfer documents carry one transfer type per document (234 or 237); projects are not effective-dated (no project master in the mock).
+3. A document's transactions share the document number; reversal rows reuse it (IsReversal).
+4. Reversing a cost adjustment linked to a purchase bill / credit note leaves that external entry posted, so reconciliation shows the difference until purchasing reverses it.
+5. Imported assets get a new FA code; the previous system's code is kept in the description.
+
+**Verification:** `npm run build` passes; `npm run check` 51 checks pass (new: direct sale refused, path B draft invoice, invoice guards 11a, clearing nets to zero T11, ReverseSale not manual, cancel → ReverseSale T30, revaluation document post/reverse, document reversal unblocks a run reversal, import errors block commit, clean import commits and reconciles, import reverse). Browser: all new pages render, zero console errors; sold FA-000006 via «بيع» → invoice SI-2026-0002 → post (640,000 to date, gain 640,000, clearing nets) → cancel (back to Running); import file → 2 row errors → removed → committed 4 assets; revaluation document ARV-2026-0002 posted and reversed; three drafts capitalized by multi-select.
+
+**Next step:** owner review; open decision 8 (impairment account) and the placeholder accounts.

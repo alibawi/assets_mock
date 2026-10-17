@@ -65,5 +65,15 @@ Purchase bill / credit-note references (no module entry when present), opening-b
 | `#/classes`, `#/locations`, `#/groups` | Settings masters |
 | `#/settings` | Thresholds, §12 decisions, permissions, document types and event mapping |
 
+## 8a. Additions — decisions of 2026-10-17
+| Route | Screen |
+|---|---|
+| `#/sales-invoices`, `#/sales-invoices/:id` | Sales invoice (mock Sales module): conditional «الأصل» field for fixed-asset items, qty 1, price = book value, revenue = sale clearing account; post → ToDate + Sale (SourceDoc = invoice) + exit entry 236; cancel → automatic ReverseSale (§5.6.9) |
+| `#/revaluations`, `#/cost-adjustments`, `#/manual-depreciation`, `#/transfers`, `#/disposals` (+ `/:id`) | Type A transaction documents with own number, post, reverse (§8, §6.2) |
+| `#/transactions` | Read-only unified log, filters type / asset / date (decision e) |
+| `#/opening-balances` (+ `/:id`) | Legacy import batch 239 — the only entry for legacy assets (§9 phase 4) |
+
+Rules added: R12 sale only via invoice (no manual ReverseSale); R13 clearing account nets to zero; R14 document reversal refused while later depreciation is posted; R15 import commit blocked by any row error, reverse blocked once posted; GL totals mismatch is a warning.
+
 ## 9. Build order
 Done — see `docs/roadmap.md`. Next: owner review and the open §12 decisions.
