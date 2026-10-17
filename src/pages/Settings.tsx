@@ -4,7 +4,7 @@ import { PageHeader } from '../components/Layout'
 import { Badge, Card, Confirm, Field, NumInput } from '../components/ui'
 import { money, months, roleLabel, txLabel } from '../data/format'
 import { txDocType } from '../data/lifecycle'
-import { permLabel, rolePerms, type Perm } from '../data/permissions'
+import { permGroups, roleHas } from '../data/permissions'
 import { useStore } from '../data/store'
 import type { RoleId, TxType } from '../data/types'
 
@@ -26,21 +26,28 @@ const docTypes: [string, string, string, string, boolean?][] = [
   ['243', 'MNT', 'Asset Maintenance', 'أمر صيانة', true],
 ]
 const journalBy: Record<string, string> = {
-  '230': 'لا', '231': 'فقط إذا رحّلت الوحدة الرسملة (§12.3)', '232': 'نعم', '233': 'نعم', '234': 'لا — رقم للتتبّع', '235': 'نعم', '236': 'نعم',
+  '230': 'لا', '231': 'فقط إذا رحّلت الوحدة الرسملة (§12.3)', '232': 'نعم', '233': 'نعم', '234': 'لا — رقم للتتبّع', '235': 'نعم', '236': 'نعم — يُنشأ حصراً بترحيل فاتورة مبيعات بسطر أصل (§5.6.9)',
   '237': 'فقط لإعادة التصنيف الاختيارية (§12.6) — معطّلة', '238': 'نعم', '239': 'لا — الأرصدة الافتتاحية عملية مستقلة', '240': 'إلا إذا رحّلتها فاتورة الشراء',
   '241': 'إلا إذا رُحِّلت مذكرة الدائن بذاتها', '242': 'نعم', '243': 'نعم (مصروف) — أو إضافة لاحقة 240 عند الرسملة',
 }
 
-// Plan §12 — open decisions and the default the mock applies.
+// Plan §12 — decisions settled on 2026-10-17 and the open decisions with the default the mock applies.
+const settled: [string, string][] = [
+  ['أ', 'إعادة التقييم والهبوط وثيقة واحدة (حقل الاتجاه: زيادة 233 / نقص 238)'],
+  ['ب', '«التسوية» إجراء على الأصل بلا وثيقة ولا قيد (تعديل العمر)'],
+  ['ج', 'الرسملة إجراء على الأصل (مع تحديد متعدد من القائمة) لا صفحة مستقلة'],
+  ['د', 'البيع حصراً عبر فاتورة المبيعات بـ AssetId على السطر (بلا تخزين IsFixedAsset فيه)، من الفاتورة أو من الأصل؛ لا بيع نقدي مباشر'],
+  ['هـ', 'صفحة لكل نوع حركة جوهري + سجل موحد للقراءة'],
+]
 const decisions: [number, string, string][] = [
-  [1, 'أرقام حسابات المجمّع وأرباح/خسائر البيع', 'رموز مؤقتة معلَّمة «مقترح» في الدليل'],
+  [1, 'أرقام الحسابات (المجمّع، أرباح/خسائر البيع، تسوية بيع الأصول…)', 'رموز مؤقتة معلَّمة «مقترح» في الدليل'],
   [2, 'عملة الأصل', 'عملة النظام فقط (IQD)'],
   [3, 'قيد الرسملة', 'فاتورة المشتريات تُرحّل الأصل؛ الوحدة ترحّل فقط عند غياب الفاتورة'],
   [4, 'مصدر العهدة', 'قائمة الموظفين (HR.Employee)'],
   [5, 'دورية الإهلاك الافتراضية', 'حقل على مستوى الفئة (المباني سنوية، والبقية شهرية)'],
   [6, 'إعادة تصنيف مصروف السنة عند نقل مركز الكلفة', 'لا قيد — الأقساط المستقبلية فقط'],
   [7, 'محاذاة الفترات الفصلية/السنوية', 'التقويم المالي (يبدأ في كانون الثاني، فيطابق الميلادي)'],
-  [8, 'حساب خسارة هبوط القيمة', 'حساب خسائر الاستبعاد إلى حين اعتماد حساب مخصّص'],
+  [8, 'حساب خسارة هبوط القيمة — يبقى مفتوحاً', 'حساب خسائر الاستبعاد إلى حين اعتماد حساب مخصّص'],
   [9, 'الاستبعاد الجزئي', 'غير مدعوم — كل وحدة أصل مستقل (سطر الفاتورة بكمية N ⇒ N أصلاً)'],
   [10, 'سياسة إهلاك فترة الإخراج', 'تتبع تحاصص الفئة (بلا تحاصص ⇒ لا إهلاك في شهر البيع)'],
   [11, 'حدّ الأصول منخفضة القيمة', 'معطّل (null) — قابل للتفعيل أدناه'],
@@ -53,7 +60,6 @@ export default function SettingsPage() {
   const [lv, setLv] = useState(db.settings.lowValueThreshold ?? 1000000)
   const [lvOn, setLvOn] = useState(db.settings.lowValueThreshold !== null)
   const roles = Object.keys(roleLabel) as RoleId[]
-  const perms = Object.keys(permLabel) as Perm[]
   const events = Object.keys(txDocType) as TxType[]
 
   return (
@@ -91,6 +97,12 @@ export default function SettingsPage() {
           </div>
         </Card>
 
+        <Card title="قرارات حُسمت (2026-10-17)" pad={false}>
+          <table className="tbl">
+            <tbody>{settled.map(([k, t]) => <tr key={k}><td className="w-10 font-semibold text-emerald-700">{k}</td><td>{t}</td><td className="w-24"><Badge tone="green">مطبَّق</Badge></td></tr>)}</tbody>
+          </table>
+        </Card>
+
         <Card title="القرارات المفتوحة (§12) — الافتراضي المطبَّق في النموذج" pad={false}>
           <table className="tbl">
             <thead><tr><th>#</th><th>القرار</th><th>الافتراضي في النموذج</th></tr></thead>
@@ -98,25 +110,28 @@ export default function SettingsPage() {
           </table>
         </Card>
 
-        <Card title="مصفوفة الصلاحيات (الدور × الصلاحية)" actions={<span className="text-xs text-gray-500">الدور الحالي: <b className="text-navy">{roleLabel[db.role]}</b> — يُبدَّل من قائمة المستخدم أعلى الشاشة</span>} pad={false}>
+        <Card title="مصفوفة الصلاحيات — مجموعة لكل صفحة (§6.3)" actions={<span className="text-xs text-gray-500">الدور الحالي: <b className="text-navy">{roleLabel[db.role]}</b> — يُبدَّل من قائمة المستخدم</span>} pad={false}>
           <div className="overflow-x-auto">
             <table className="tbl">
-              <thead><tr><th>الصلاحية</th>{roles.map((r) => <th key={r} className={`!text-center ${db.role === r ? '!bg-navy-50 !text-navy' : ''}`}>{roleLabel[r]}</th>)}</tr></thead>
+              <thead>
+                <tr><th>المجموعة</th><th>الصلاحية</th>{roles.map((r) => <th key={r} className={`!text-center ${db.role === r ? '!bg-navy-50 !text-navy' : ''}`}>{roleLabel[r]}</th>)}</tr>
+              </thead>
               <tbody>
-                {perms.map((p) => (
-                  <tr key={p}>
-                    <td>{permLabel[p]}</td>
+                {permGroups.flatMap((g) => g.actions.map((act, i) => (
+                  <tr key={g.key + act} className={i === 0 ? 'border-t-2 border-line' : ''}>
+                    {i === 0 && <td rowSpan={g.actions.length} className="align-top"><div className="font-semibold">{g.label}</div><div className="text-[11px] text-gray-400" dir="ltr">{g.key}</div></td>}
+                    <td dir="ltr" className="text-end text-xs">.{act}</td>
                     {roles.map((r) => (
                       <td key={r} className={`text-center ${db.role === r ? 'bg-navy-50/50' : ''}`}>
-                        {rolePerms[r].includes(p) ? <Check className="mx-auto h-4 w-4 text-emerald-600" /> : <Minus className="mx-auto h-4 w-4 text-gray-300" />}
+                        {roleHas(r, g.key, act) ? <Check className="mx-auto h-4 w-4 text-emerald-600" /> : <Minus className="mx-auto h-4 w-4 text-gray-300" />}
                       </td>
                     ))}
                   </tr>
-                ))}
+                )))}
               </tbody>
             </table>
           </div>
-          <p className="px-4 py-2 text-xs text-gray-500">الأدوار تُركَّب من الصلاحيات في شاشة الأدوار ولا تُبرمج كأدوار ثابتة. في النموذج يغيّر تبديل الدور الأزرار المتاحة فقط.</p>
+          <p className="px-4 py-2 text-xs text-gray-500">محاسب الأصول: Post + Reverse على الأصل ودورات الإهلاك وكل صفحات الحركات واستيراد الأصول القديمة. سجل الحركات قراءة فقط. البيع يُرحَّل بصلاحيات فاتورة المبيعات. الأدوار تُركَّب من الصلاحيات ولا تُبرمج ثابتة.</p>
         </Card>
 
         <Card title="أنواع الوثائق والترقيم (§3.10)" pad={false}>

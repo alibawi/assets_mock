@@ -5,26 +5,25 @@ import {
 import { useEffect, useMemo, useState } from 'react'
 import { Link, useNavigate, useParams } from 'react-router-dom'
 import { PageHeader } from '../components/Layout'
-import { TxModal, txSummary } from '../components/Shared'
+import { sourceLink, TxModal } from '../components/Shared'
 import { Badge, Card, Confirm, Dropdown, Empty, Field, FormGrid, Modal, NumInput, ReadOnly, SaveSplit, Select, Tabs } from '../components/ui'
 import { assetLedger } from '../data/asof'
 import { accumOf, bookValue, depBase, generateSchedule, lifeError, monthsIncl, MPP, periodEndOf, remainingDepreciable } from '../data/calc'
 import {
   accumWord, depWord, iqd, kindLabel, maintStatusLabel, maintStatusTone, maintTypeLabel, methodLabel, money, periodicityLabel, prorataLabel, stateLabel,
-  stateTone, txLabel, txTone,
+  stateTone, txLabel,
 } from '../data/format'
-import {
-  addCost, cancelAsset, canDelete, capitalize, changeLife, costCenterTransfer, defaultCcDate, dispose, exitPreview, impair, lowValueError, manualDepreciation,
-  nextAssetCode, pause, reduceCost, resume, revalue, sell, TODAY, transfer, undoCapitalization,
-} from '../data/lifecycle'
+import { createSaleInvoiceForAsset } from '../data/documents'
+import { cancelAsset, canDelete, capitalize, changeLife, lowValueError, nextAssetCode, pause, resume, TODAY, undoCapitalization } from '../data/lifecycle'
+import { TxTable } from './Transactions'
 import { useLookups } from '../data/lookups'
 import { useStore } from '../data/store'
 import type { Asset, AssetTx, DB, DepLine, DepMethod, Periodicity, Prorata } from '../data/types'
 
 type Tab = 'general' | 'dep' | 'location' | 'ledger' | 'maint' | 'events' | 'files'
-type Action =
-  | 'capitalize' | 'cancel' | 'undo' | 'pause' | 'resume' | 'revalue' | 'impair' | 'addCost' | 'reduceCost' | 'manual' | 'life'
-  | 'transfer' | 'cct' | 'sell' | 'dispose' | 'delete' | 'tag'
+// Capitalize, pause, resume and the adjustment (life change) stay dialogs on the card; every other transaction is a
+// document page (§8, decisions a–e) and the sale goes through a sales invoice (§5.6.9).
+type Action = 'capitalize' | 'cancel' | 'undo' | 'pause' | 'resume' | 'life' | 'delete' | 'tag'
 
 const blank = (): Asset => ({
   id: '', code: '', name: '', description: '', classId: '', groupId: '', locationId: '', custodianId: '', serial: '', tagNumber: '',
@@ -147,6 +146,16 @@ export default function AssetForm() {
   const booked = active || a.state === 'closed'
   const methods = (Object.keys(methodLabel) as DepMethod[]).map((k) => ({ value: k, label: methodLabel[k] }))
 
+  /** Path B — «بيع» creates a draft sales invoice with the asset line and opens it (§5.6.9). */
+  const sellAsset = () => {
+    let invId = ''
+    if (run((d) => {
+      const inv = createSaleInvoiceForAsset(d, a.id)
+      if (typeof inv === 'string') return inv
+      invId = inv.id
+    }, 'أُنشئت فاتورة مبيعات مسودة بسطر الأصل — أكمل العميل والسعر ثم رحّلها')) nav(`/sales-invoices/${invId}`)
+  }
+
   const items = draft
     ? [
         { label: 'إلغاء الأصل', icon: Ban, onClick: () => setAction('cancel'), disabled: isNew || !can('update') },
@@ -155,23 +164,23 @@ export default function AssetForm() {
       ]
     : final
       ? [
-          ...(exitTx ? [{ label: exitTx.type === 'sale' ? 'عكس البيع' : 'عكس الاستبعاد', icon: Undo2, onClick: () => setOpenTx(exitTx), disabled: !can('reverse') }] : []),
+          ...(exitTx ? [{ label: exitTx.type === 'sale' ? `فاتورة البيع ${exitTx.sourceDocRef} (الإلغاء يعكس البيع)` : `مستند الاستبعاد ${exitTx.number}`, icon: Undo2, onClick: () => { const s = sourceLink(db, exitTx); if (s) nav(s.to) } }] : []),
           { label: 'طباعة ملصق الأصل', icon: Barcode, onClick: () => setAction('tag') },
         ]
       : [
           { label: 'إيقاف الإهلاك', icon: CirclePause, onClick: () => setAction('pause'), disabled: a.state !== 'running' || !can('post') },
           { label: 'استئناف الإهلاك', icon: CirclePlay, onClick: () => setAction('resume'), disabled: a.state !== 'paused' || !can('post') },
           { label: 'تراجع عن الرسملة', icon: Undo2, onClick: () => setAction('undo'), disabled: a.state !== 'running' || !can('reverse') },
-          { label: 'إعادة تقييم (زيادة)', icon: TrendingUp, onClick: () => setAction('revalue'), disabled: !booked || !can('post') },
-          { label: 'هبوط قيمة', icon: TrendingDown, onClick: () => setAction('impair'), disabled: !active || !can('post') },
-          { label: 'إضافة لاحقة (AddCost)', icon: PlusCircle, onClick: () => setAction('addCost'), disabled: !booked || !can('post') },
-          { label: 'تخفيض اقتناء (ReduceCost)', icon: MinusCircle, onClick: () => setAction('reduceCost'), disabled: !active || !can('post') },
-          { label: `${dep} اليدوي`, icon: PenLine, onClick: () => setAction('manual'), disabled: !active || !can('post') || !c?.isDepreciable || c.kind === 'land' },
-          { label: 'تعديل العمر الإنتاجي', icon: Clock3, onClick: () => setAction('life'), disabled: !booked || !can('post') || !c?.isDepreciable || c.kind === 'lowValue' },
-          { label: 'نقل موقع / عهدة', icon: ArrowLeftRight, onClick: () => setAction('transfer'), disabled: !booked || !can('update') },
-          { label: 'نقل مركز الكلفة', icon: Landmark, onClick: () => setAction('cct'), disabled: !booked || !can('update') },
-          { label: 'بيع', icon: Wallet, onClick: () => setAction('sell'), disabled: !booked || !can('post') },
-          { label: 'استبعاد بلا مقابل', icon: Trash2, onClick: () => setAction('dispose'), disabled: !booked || !can('post') },
+          { label: 'تسوية — تعديل العمر الإنتاجي', icon: Clock3, onClick: () => setAction('life'), disabled: !booked || !can('post') || !c?.isDepreciable || c.kind === 'lowValue' },
+          { label: 'مستند إعادة تقييم (زيادة)', icon: TrendingUp, onClick: () => nav(`/revaluations/new?asset=${a.id}`), disabled: !booked || !can('post') },
+          { label: 'مستند هبوط قيمة (نقص)', icon: TrendingDown, onClick: () => nav(`/revaluations/new?asset=${a.id}&dir=down`), disabled: !active || !can('post') },
+          { label: 'مستند إضافة لاحقة', icon: PlusCircle, onClick: () => nav(`/cost-adjustments/new?asset=${a.id}`), disabled: !booked || !can('post') },
+          { label: 'مستند تخفيض اقتناء', icon: MinusCircle, onClick: () => nav(`/cost-adjustments/new?asset=${a.id}&adj=reduction`), disabled: !active || !can('post') },
+          { label: `مستند ${dep} يدوي`, icon: PenLine, onClick: () => nav(`/manual-depreciation/new?asset=${a.id}`), disabled: !active || !can('post') || !c?.isDepreciable || c.kind === 'land' },
+          { label: 'مستند نقل موقع / عهدة', icon: ArrowLeftRight, onClick: () => nav(`/transfers/new?asset=${a.id}`), disabled: !booked || !can('update') },
+          { label: 'مستند نقل مركز كلفة', icon: Landmark, onClick: () => nav(`/transfers/new?asset=${a.id}&tt=costCenter`), disabled: !booked || !can('update') },
+          { label: 'بيع — إنشاء فاتورة مبيعات', icon: Wallet, onClick: sellAsset, disabled: !booked || !can('create') },
+          { label: 'مستند استبعاد بلا مقابل', icon: Trash2, onClick: () => nav(`/disposals/new?asset=${a.id}`), disabled: !booked || !can('post') },
           { label: 'أمر صيانة جديد', icon: Wrench, onClick: () => nav(`/maintenance/new?asset=${a.id}`), disabled: !can('create') },
           { label: 'طباعة ملصق الأصل', icon: Barcode, onClick: () => setAction('tag') },
         ]
@@ -225,7 +234,7 @@ export default function AssetForm() {
             { id: 'location', label: 'الموقع والعهدة', icon: MapPin },
             { id: 'ledger', label: 'بطاقة الأصل', icon: BookOpenCheck },
             { id: 'maint', label: 'الصيانة', icon: Wrench, count: maint.length || undefined },
-            { id: 'events', label: 'سجل الأحداث', icon: History, count: txs.length },
+            { id: 'events', label: 'سجل الحركات', icon: History, count: txs.length },
             { id: 'files', label: 'المرفقات', icon: Paperclip },
           ]}
         />
@@ -278,20 +287,20 @@ export default function AssetForm() {
                 <Field label="مجال الإهلاك"><ReadOnly>01 — Local GAAP</ReadOnly></Field>
                 <Field label="أصل مستورد (رصيد افتتاحي)">
                   <label className="flex h-8 items-center gap-2 text-sm">
-                    <input type="checkbox" checked={a.isLegacy} disabled={!editable} onChange={(e) => setA((p) => ({ ...p, isLegacy: e.target.checked, importCutoffDate: e.target.checked ? p.importCutoffDate ?? '2025-12-31' : null, remainingLifeAtImport: e.target.checked ? p.remainingLifeAtImport : null }))} />
-                    مستورد من النظام السابق
+                    <input type="checkbox" checked={a.isLegacy} disabled />
+                    {a.isLegacy ? 'مستورد بدفعة الاستيراد' : 'لا — الأصول القديمة تُدخل فقط من «استيراد الأصول القديمة»'}
                   </label>
                 </Field>
                 {a.isLegacy && (
                   <>
                     <Field label="تاريخ قطع الاستيراد" required hint="نهاية فترة — أول قسط في الفترة التالية">
-                      <input type="date" className="inp" value={a.importCutoffDate ?? ''} disabled={!editable} onChange={(e) => set('importCutoffDate', e.target.value)} />
+                      <input type="date" className="inp" value={a.importCutoffDate ?? ''} disabled onChange={(e) => set('importCutoffDate', e.target.value)} />
                     </Field>
-                    <Field label="الإهلاك المستورد" required><NumInput value={a.importedAccum} disabled={!editable} onChange={(n) => set('importedAccum', n)} /></Field>
+                    <Field label="الإهلاك المستورد" required><NumInput value={a.importedAccum} disabled onChange={(n) => set('importedAccum', n)} /></Field>
                     <Field label="العمر المتبقي عند الاستيراد (شهر)" required hint={suggestedRemaining !== null ? `المقترح: ${suggestedRemaining} = العمر − الأشهر حتى القطع` : undefined}>
                       <div className="flex gap-1">
-                        <NumInput value={a.remainingLifeAtImport ?? 0} disabled={!editable} onChange={(n) => set('remainingLifeAtImport', n)} />
-                        {editable && suggestedRemaining !== null && <button type="button" className="btn shrink-0 px-2 text-xs" onClick={() => set('remainingLifeAtImport', suggestedRemaining)}>المقترح</button>}
+                        <NumInput value={a.remainingLifeAtImport ?? 0} disabled onChange={(n) => set('remainingLifeAtImport', n)} />
+                        {false && suggestedRemaining !== null && <button type="button" className="btn shrink-0 px-2 text-xs" onClick={() => set('remainingLifeAtImport', suggestedRemaining)}>المقترح</button>}
                       </div>
                     </Field>
                   </>
@@ -357,8 +366,8 @@ export default function AssetForm() {
               </FormGrid>
               {!draft && booked && (
                 <div className="flex flex-wrap gap-2">
-                  <button type="button" className="btn" onClick={() => setAction('transfer')}><ArrowLeftRight className="h-4 w-4" />نقل موقع / عهدة</button>
-                  <button type="button" className="btn" onClick={() => setAction('cct')}><Landmark className="h-4 w-4" />نقل مركز الكلفة</button>
+                  <button type="button" className="btn" onClick={() => nav(`/transfers/new?asset=${a.id}`)}><ArrowLeftRight className="h-4 w-4" />مستند نقل موقع / عهدة</button>
+                  <button type="button" className="btn" onClick={() => nav(`/transfers/new?asset=${a.id}&tt=costCenter`)}><Landmark className="h-4 w-4" />مستند نقل مركز كلفة</button>
                 </div>
               )}
               {cctHistory.length > 0 && (
@@ -403,25 +412,7 @@ export default function AssetForm() {
             </div>
           )}
 
-          {tab === 'events' && (
-            txs.length ? (
-              <ol className="relative space-y-3 border-s border-line ps-5">
-                {txs.map((t) => (
-                  <li key={t.id} className={`relative cursor-pointer rounded-md p-1.5 hover:bg-gray-50 ${t.isReversed ? 'opacity-60' : ''}`} onClick={() => setOpenTx(t)}>
-                    <span className="absolute -start-[27px] top-3 h-3 w-3 rounded-full border-2 border-white bg-navy" />
-                    <div className="flex flex-wrap items-center gap-2 text-sm">
-                      <Badge tone={txTone[t.type]}>{txLabel[t.type]}</Badge>
-                      <span className="font-medium text-navy" dir="ltr">{t.number}</span>
-                      {t.isReversed && <Badge tone="amber">معكوس</Badge>}
-                      {t.journal.length > 0 && <span className="flex items-center gap-1 text-[11px] text-gray-500"><FileText className="h-3 w-3" />قيد</span>}
-                    </div>
-                    <div className="mt-0.5 text-sm text-gray-700">{txSummary(t, L) || t.notes}</div>
-                    <div className="text-xs text-gray-400" dir="ltr" style={{ textAlign: 'right' }}>{t.date} · {t.user}</div>
-                  </li>
-                ))}
-              </ol>
-            ) : <Empty text="لا توجد أحداث بعد — تُسجَّل الأحداث بدءاً من الرسملة" />
-          )}
+          {tab === 'events' && <TxTable rows={txs} hideAsset />}
 
           {tab === 'files' && (
             <div className="space-y-3">
@@ -516,28 +507,13 @@ export function LedgerTable({ db, from, to, setFrom, setTo, opening, rows, onOpe
 
 function ActionModal({ kind, asset: a, onClose }: { kind: Exclude<Action, 'delete' | 'tag'>; asset: Asset; onClose: () => void }) {
   const { db, run } = useStore()
-  const L = useLookups()
   const stored = db.assets.find((x) => x.id === a.id) ?? a
-  const [date, setDate] = useState(() => (kind === 'cct' ? defaultCcDate(db, stored) : kind === 'capitalize' ? (a.depStartDate > TODAY ? a.depStartDate : TODAY) : TODAY))
+  const [date, setDate] = useState(() => (kind === 'capitalize' ? (a.depStartDate > TODAY ? a.depStartDate : TODAY) : TODAY))
   const [notes, setNotes] = useState('')
-  const [value, setValue] = useState(() => (kind === 'life' ? (a.isLegacy ? a.remainingLifeAtImport ?? 0 : a.lifeMonths) : kind === 'revalue' || kind === 'impair' ? bookValue(db, stored) : 0))
-  const [party, setParty] = useState('')
-  const [ref, setRef] = useState('')
-  const [newLife, setNewLife] = useState(0)
-  const [to, setTo] = useState({ locationId: a.locationId, custodianId: a.custodianId })
-  const [cc, setCc] = useState(a.costCenterId)
-  const nbv = bookValue(db, stored)
+  const [value, setValue] = useState(() => (a.isLegacy ? a.remainingLifeAtImport ?? 0 : a.lifeMonths))
   const posted = db.lines.filter((l) => l.assetId === a.id && l.isPosted && l.type === 'depreciation').length
-  const exit = kind === 'sell' || kind === 'dispose' ? exitPreview(db, stored, date) : null
-  const fs = db.settings.fiscalStartMonth
-  const ccDateWarn = kind === 'cct' && date !== defaultCcDate(db, stored)
-    ? `التاريخ المقترح ${defaultCcDate(db, stored)}: النقل في منتصف فترة ينقل قسط تلك الفترة كاملاً لأن تاريخ القسط نهاية الفترة (${periodEndOf(date, stored.periodicity, fs)}).`
-    : null
-
   const titles: Record<typeof kind, string> = {
-    capitalize: 'رسملة الأصل', cancel: 'إلغاء الأصل', undo: 'تراجع عن الرسملة', pause: 'إيقاف الإهلاك', resume: 'استئناف الإهلاك',
-    revalue: 'إعادة تقييم بالزيادة', impair: 'هبوط قيمة', addCost: 'إضافة لاحقة (AddCost — 240)', reduceCost: 'تخفيض اقتناء (ReduceCost — 241)',
-    manual: 'إهلاك يدوي (242)', life: 'تعديل العمر الإنتاجي', transfer: 'نقل موقع / عهدة (234)', cct: 'نقل مركز الكلفة (237)', sell: 'بيع الأصل (236)', dispose: 'استبعاد بلا مقابل (235)',
+    capitalize: 'رسملة الأصل', cancel: 'إلغاء الأصل', undo: 'تراجع عن الرسملة', pause: 'إيقاف الإهلاك', resume: 'استئناف الإهلاك', life: 'تسوية — تعديل العمر الإنتاجي',
   }
   const submit = () => {
     const ok = run((d) => {
@@ -547,119 +523,35 @@ function ActionModal({ kind, asset: a, onClose }: { kind: Exclude<Action, 'delet
         case 'undo': return undoCapitalization(d, a.id, notes)
         case 'pause': return pause(d, a.id, date, notes)
         case 'resume': return resume(d, a.id, date, notes)
-        case 'revalue': return revalue(d, a.id, date, value, notes)
-        case 'impair': return impair(d, a.id, date, value, notes)
-        case 'addCost': return addCost(d, a.id, date, value, ref, newLife || null, notes)
-        case 'reduceCost': return reduceCost(d, a.id, date, value, ref, notes)
-        case 'manual': return manualDepreciation(d, a.id, date, value, notes)
         case 'life': return changeLife(d, a.id, date, value, notes)
-        case 'transfer': return transfer(d, a.id, date, to, notes)
-        case 'cct': return costCenterTransfer(d, a.id, date, cc, notes)
-        case 'sell': return sell(d, a.id, date, value, party, notes)
-        case 'dispose': return dispose(d, a.id, date, notes)
       }
     }, `تم تنفيذ: ${titles[kind]}`)
     if (ok) onClose()
   }
-
-  const gain = value - (exit?.nbv ?? 0)
-  const noDate = kind === 'undo'
   return (
-    <Modal
-      title={`${titles[kind]} — ${a.code}`}
-      onClose={onClose}
-      footer={<><button type="button" className="btn" onClick={onClose}>إلغاء</button><button type="button" className="btn btn-primary" onClick={submit}>تنفيذ</button></>}
-    >
+    <Modal title={`${titles[kind]} — ${a.code}`} onClose={onClose}
+      footer={<><button type="button" className="btn" onClick={onClose}>إلغاء</button><button type="button" className="btn btn-primary" onClick={submit}>تنفيذ</button></>}>
       <div className="grid grid-cols-2 gap-3">
-        {!noDate && <Field label={kind === 'cct' ? 'تاريخ السريان' : 'التاريخ الفعلي'} required><input type="date" className="inp" value={date} onChange={(e) => setDate(e.target.value)} /></Field>}
-        <Field label="القيمة الدفترية الحالية"><ReadOnly ltr>{money(nbv)}</ReadOnly></Field>
-
+        {kind !== 'undo' && <Field label="التاريخ الفعلي" required><input type="date" className="inp" value={date} onChange={(e) => setDate(e.target.value)} /></Field>}
+        <Field label="القيمة الدفترية الحالية"><ReadOnly ltr>{money(bookValue(db, stored))}</ReadOnly></Field>
         {kind === 'capitalize' && (
           <div className="col-span-2 space-y-1 rounded-md bg-gray-50 p-3 text-xs text-gray-600">
             <div>• يتحوّل الأصل إلى «قيد الإهلاك» ويُولَّد الجدول ({methodLabel[a.method]}، {a.lifeMonths} شهراً، {periodicityLabel[a.periodicity]}، {prorataLabel[a.prorata]}).</div>
             <div>• {a.sourceDocRef ? `مرتبط بفاتورة المشتريات ${a.sourceDocRef} — لا قيد رسملة من الوحدة.` : 'لا وثيقة شراء — قيد رسملة: مدين حساب الأصل / دائن الموردون.'}</div>
-            <div>• يُتحقَّق من حسابات الفئة، وأن العمر من مضاعفات الفترة{L.cls(a.classId)?.kind === 'lowValue' ? '، وحدّ الأصول منخفضة القيمة' : ''}.</div>
+            <div>• للرسملة الجماعية: حدّد عدة مسودات من سجل الأصول.</div>
           </div>
         )}
         {kind === 'cancel' && <div className="col-span-2 text-xs text-gray-500">حالة نهائية بلا قيود؛ يبقى الرمز {a.code} محجوزاً والسجل للتدقيق.</div>}
-        {kind === 'undo' && <div className="col-span-2 text-xs text-gray-500">مسموح فقط قبل ترحيل أي قسط وقبل أي إعادة تقييم. يُعكس قيد الرسملة (إن رحّلته الوحدة) بنفس التاريخ ويُحذف الجدول، ويعود الأصل مسودة.</div>}
+        {kind === 'undo' && <div className="col-span-2 text-xs text-gray-500">مسموح فقط قبل ترحيل أي قسط وقبل أي إعادة تقييم. يُعكس قيد الرسملة (إن رحّلته الوحدة) ويُحذف الجدول ويعود الأصل مسودة.</div>}
         {kind === 'resume' && <div className="col-span-2 text-xs text-gray-500">الإيقاف لا يستهلك العمر: الفترات المتبقية بلا تغيير، وأول قسط بعد الاستئناف كامل.</div>}
-        {(kind === 'revalue' || kind === 'impair') && (
-          <>
-            <Field label="القيمة الدفترية الجديدة" required><NumInput value={value} onChange={setValue} /></Field>
-            <Field label="الفرق"><ReadOnly ltr><span className={value - nbv < 0 ? 'text-red-600' : 'text-emerald-700'}>{money(value - nbv)}</span></ReadOnly></Field>
-            <div className="col-span-2 text-xs text-gray-500">
-              {kind === 'revalue' ? 'مدين حساب الأصل / دائن فائض إعادة التقييم (233).' : 'مدين خسائر الاستبعاد (إلى حين اعتماد حساب هبوط القيمة، §12.8) / دائن حساب الأصل (238).'}
-              {' '}تُعاد حسبة الأقساط غير المُرحّلة فقط ({posted} مُرحّلاً لن يتغيّر).{kind === 'revalue' && stored.state === 'closed' ? ' الأصل مكتمل الإهلاك سيعود «قيد الإهلاك» إن بقيت قيمة قابلة للإهلاك.' : ''}
-            </div>
-          </>
-        )}
-        {(kind === 'addCost' || kind === 'reduceCost') && (
-          <>
-            <Field label="المبلغ" required><NumInput value={value} onChange={setValue} /></Field>
-            <Field label={kind === 'addCost' ? 'مرجع فاتورة الشراء (اختياري)' : 'مرجع مذكرة الدائن (اختياري)'} hint="مع المرجع لا تُنشئ الوحدة قيداً"><input className="inp" dir="ltr" value={ref} onChange={(e) => setRef(e.target.value)} /></Field>
-            {kind === 'addCost' && <Field label="عمر متبقٍّ جديد (اختياري، شهر)" hint="فارغ = الفترات المتبقية بلا تغيير"><NumInput value={newLife} onChange={setNewLife} /></Field>}
-            <div className="col-span-2 text-xs text-gray-500">
-              {kind === 'addCost'
-                ? `القيمة الأصلية ${money(stored.originalValue)} ← ${money(stored.originalValue + value)}؛ يُعاد توزيع المتبقي على الفترات المتبقية دون تدارك بأثر رجعي.`
-                : `يُرفض إن هبطت القيمة دون المجمّع المُرحّل + المستورد (${money(accumOf(db, stored))}).`}
-            </div>
-          </>
-        )}
-        {kind === 'manual' && (
-          <>
-            <Field label="المبلغ" required><NumInput value={value} onChange={setValue} /></Field>
-            <Field label="المتبقي القابل للإهلاك"><ReadOnly ltr>{money(remainingDepreciable(db, stored))}</ReadOnly></Field>
-            <div className="col-span-2 text-xs text-gray-500">يُنشأ سطر «يدوي» مُرحّل بقيده (مدين مصروف / دائن مجمّع)، ويُعاد توزيع الباقي على الفترات المتبقية بلا تغيير. يُعدّ حدثاً تابعاً عند عكس الدورات.</div>
-          </>
-        )}
         {kind === 'life' && (
           <>
             <Field label={a.isLegacy ? 'العمر المتبقي عند الاستيراد الجديد (شهر)' : 'العمر الإنتاجي الجديد (شهر)'} required hint={`من مضاعفات ${MPP[a.periodicity]}`}><NumInput value={value} onChange={setValue} /></Field>
             <Field label="الأقساط المُرحّلة"><ReadOnly ltr>{posted}</ReadOnly></Field>
+            <div className="col-span-2 text-xs text-gray-500">التسوية إجراء على الأصل بلا وثيقة ولا قيد (القرار ب): تُسجَّل حركة «تسوية» ويُعاد توليد الأقساط غير المُرحّلة فقط.</div>
           </>
         )}
-        {kind === 'transfer' && (
-          <>
-            <Field label="الموقع الجديد" required><Select value={to.locationId} onChange={(v) => setTo({ ...to, locationId: v })} options={L.locOptions} /></Field>
-            <Field label="صاحب العهدة الجديد" required><Select value={to.custodianId} onChange={(v) => setTo({ ...to, custodianId: v })} options={L.empOptions} /></Field>
-            <div className="col-span-2 text-xs text-gray-500">بلا قيد — رقم للتتبّع فقط. مسموح أيضاً للأصل مكتمل الإهلاك.</div>
-          </>
-        )}
-        {kind === 'cct' && (
-          <>
-            <Field label="من"><ReadOnly>{L.ccName(a.costCenterId)}</ReadOnly></Field>
-            <Field label="إلى" required><Select value={cc} onChange={setCc} options={L.ccOptions} /></Field>
-            <div className="col-span-2 space-y-1 text-xs text-gray-500">
-              <div>لا قيد افتراضياً: كل قسط يأخذ المركز الساري في تاريخه، والأقساط المُرحّلة تبقى على مركزها (§5.5). لا نقل بأثر رجعي قبل آخر قسط مُرحّل.</div>
-              {ccDateWarn && <div className="text-amber-700">⚠ {ccDateWarn}</div>}
-            </div>
-          </>
-        )}
-        {exit && (
-          <>
-            {kind === 'sell' && (
-              <>
-                <Field label="المشتري" required><input className="inp" value={party} onChange={(e) => setParty(e.target.value)} /></Field>
-                <Field label="سعر البيع" required><NumInput value={value} onChange={setValue} /></Field>
-              </>
-            )}
-            <div className="col-span-2 rounded-md border border-line">
-              <table className="tbl">
-                <tbody>
-                  {exit.blocking && <tr><td colSpan={2} className="text-red-600">Assets:PostDepreciationFirst — رحّل دورة {exit.blocking.date.slice(0, 7)} أولاً</td></tr>}
-                  <tr><td>القيمة الأصلية</td><td className="num">{money(exit.gross)}</td></tr>
-                  <tr><td>إهلاك حتى تاريخ الإخراج ({prorataLabel[stored.prorata]}{exit.toDate ? ` — ${Math.round(exit.g * 100)}%` : ''})</td><td className="num">{money(exit.toDate)}</td></tr>
-                  <tr><td>المجمّع عند الإخراج</td><td className="num">{money(exit.accum)}</td></tr>
-                  <tr><td>القيمة الدفترية</td><td className="num font-semibold">{money(exit.nbv)}</td></tr>
-                  {kind === 'sell' && <tr><td>{gain >= 0 ? 'ربح البيع' : 'خسارة البيع'}</td><td className={`num font-semibold ${gain < 0 ? 'text-red-600' : 'text-emerald-700'}`}>{money(Math.abs(gain))}</td></tr>}
-                </tbody>
-              </table>
-            </div>
-            <div className="col-span-2 text-xs text-amber-700">زوج «حتى التاريخ» جزء من قيد {kind === 'sell' ? 'البيع' : 'الاستبعاد'} ويُعكس معه؛ وتُلغى بقية الأقساط غير المُرحّلة. يُخرَج الأصل كاملاً (الاستبعاد الجزئي خارج v1).</div>
-          </>
-        )}
-        {kind !== 'capitalize' && <Field label="ملاحظات" span={2}><input className="inp" value={notes} onChange={(e) => setNotes(e.target.value)} /></Field>}
+        <Field label="ملاحظات" span={2}><input className="inp" value={notes} onChange={(e) => setNotes(e.target.value)} /></Field>
       </div>
     </Modal>
   )

@@ -22,7 +22,7 @@ type Edit = AssetClass & { acc: Acc }
 const blankClass = (): Edit => ({
   id: '', code: '', name: '', foreignName: '', kind: 'tangible', method: 'SL', lifeMonths: 60, decliningFactor: null, periodicity: 'M', prorata: 'NONE',
   isDepreciable: true, isActive: true,
-  acc: { assetAcct: '', accumAcct: '', expenseAcct: '', gainAcct: '4900000001', lossAcct: '3800000001', revalSurplusAcct: '2500000001' },
+  acc: { assetAcct: '', accumAcct: '', expenseAcct: '', gainAcct: '4900000001', lossAcct: '3800000001', revalSurplusAcct: '2500000001', saleClearingAcct: '1300000001' },
 })
 
 export function ClassesPage() {
@@ -117,6 +117,7 @@ export function ClassesPage() {
             <Field label="حساب أرباح الاستبعاد" required>{acct('gainAcct')}</Field>
             <Field label="حساب خسائر الاستبعاد" required>{acct('lossAcct')}</Field>
             <Field label="حساب فائض إعادة التقييم">{acct('revalSurplusAcct')}</Field>
+            <Field label="حساب تسوية بيع الأصول" required hint="حساب إيراد سطر الأصل في فاتورة المبيعات (§5.6.9)">{acct('saleClearingAcct')}</Field>
           </div>
         </Modal>
       )}

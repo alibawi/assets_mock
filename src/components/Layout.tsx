@@ -1,7 +1,7 @@
 import {
   Archive, ArrowLeftRight, BarChart3, Bell, BellRing, Boxes, Building2, ChevronDown, ChevronLeft, ClipboardList, Cog, Factory,
   FolderKanban, Globe, Handshake, Landmark, Languages, LayoutDashboard, MapPin, Menu, Monitor, Package, Plus, Search,
-  Settings, Shield, ShoppingBag, ShoppingCart, Store, Tags, TrendingDown, TrendingUp, Truck, Users, Layers, UserCog, Wrench, RotateCcw, Dot,
+  Settings, Shield, ShoppingBag, ShoppingCart, Store, Tags, TrendingDown, TrendingUp, Truck, Users, Layers, UserCog, Wrench, RotateCcw, Dot, Scale, PenLine, Trash2, History, Receipt, FileSpreadsheet,
   type LucideIcon,
 } from 'lucide-react'
 import { useState, type ReactNode } from 'react'
@@ -22,8 +22,14 @@ export const assetNav: { to: string; label: string; icon: LucideIcon; section?: 
   { to: '/', label: 'لوحة المعلومات', icon: LayoutDashboard },
   { to: '/assets', label: 'سجل الأصول', icon: Package },
   { to: '/runs', label: 'دورات الإهلاك', icon: TrendingDown },
-  { to: '/transactions', label: 'حركات الأصول', icon: ArrowLeftRight },
-  { to: '/maintenance', label: 'الصيانة', icon: Wrench },
+  { to: '/revaluations', label: 'إعادة التقييم والهبوط', icon: TrendingUp, section: 'الحركات' },
+  { to: '/cost-adjustments', label: 'الإضافة والتخفيض', icon: Scale },
+  { to: '/manual-depreciation', label: 'الإهلاك اليدوي', icon: PenLine },
+  { to: '/transfers', label: 'النقل', icon: ArrowLeftRight },
+  { to: '/disposals', label: 'الاستبعاد بلا مقابل', icon: Trash2 },
+  { to: '/transactions', label: 'سجل حركات الأصول', icon: History },
+  { to: '/sales-invoices', label: 'فواتير المبيعات', icon: Receipt, section: 'المبيعات' },
+  { to: '/maintenance', label: 'الصيانة', icon: Wrench, section: 'التشغيل والتقارير' },
   { to: '/reports', label: 'التقارير', icon: BarChart3 },
   { to: '/reports?r=register', label: 'سجل الأصول بتاريخ', icon: Dot, sub: true },
   { to: '/reports?r=roll', label: 'جدول الحركة', icon: Dot, sub: true },
@@ -35,6 +41,7 @@ export const assetNav: { to: string; label: string; icon: LucideIcon; section?: 
   { to: '/classes', label: 'فئات الأصول', icon: Tags, section: 'الإعدادات' },
   { to: '/locations', label: 'المواقع', icon: MapPin },
   { to: '/groups', label: 'المجموعات', icon: Layers },
+  { to: '/opening-balances', label: 'استيراد الأصول القديمة', icon: FileSpreadsheet },
   { to: '/settings', label: 'الصلاحيات والترقيم', icon: Cog },
 ]
 

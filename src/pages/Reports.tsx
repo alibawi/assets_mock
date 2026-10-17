@@ -2,7 +2,7 @@ import { BookOpenCheck, CalendarRange, Download, Layers3, MapPin, Printer, Scale
 import { Fragment, useState } from 'react'
 import { Link, useSearchParams } from 'react-router-dom'
 import { PageHeader } from '../components/Layout'
-import { TxModal } from '../components/Shared'
+import { sourceLink, TxModal } from '../components/Shared'
 import { Field, Select, Tabs } from '../components/ui'
 import { assetLedger, reconciliationAsOf, registerAsOf, rollForward } from '../data/asof'
 import { periodLabel, money, stateLabel, txLabel } from '../data/format'
@@ -283,13 +283,15 @@ function Disposals() {
       </Filters>
       <Head text={`المبيعات والاستبعادات من ${from} إلى ${to} (المعكوسة مستبعدة)`} />
       <table className="tbl">
-        <thead><tr><th>رقم الحركة</th><th>التاريخ</th><th>النوع</th><th>الأصل</th><th>الجهة</th><th className="!text-end">التكلفة</th><th className="!text-end">إهلاك حتى التاريخ</th><th className="!text-end">المجمّع</th><th className="!text-end">الدفترية</th><th className="!text-end">المتحصّل</th><th className="!text-end">ربح / (خسارة)</th></tr></thead>
+        <thead><tr><th>رقم الحركة</th><th>المستند المصدر</th><th>التاريخ</th><th>النوع</th><th>الأصل</th><th>الجهة</th><th className="!text-end">التكلفة</th><th className="!text-end">إهلاك حتى التاريخ</th><th className="!text-end">المجمّع</th><th className="!text-end">الدفترية</th><th className="!text-end">المتحصّل</th><th className="!text-end">ربح / (خسارة)</th></tr></thead>
         <tbody>
           {txs.map((t) => {
             const gl = (t.type === 'sale' ? t.amount : 0) - nbv(t)
             return (
               <tr key={t.id} className="cursor-pointer" onClick={() => setOpen(t)}>
-                <td dir="ltr" className="text-end text-navy">{t.number}</td><td dir="ltr" className="text-end">{t.date}</td><td>{txLabel[t.type]}</td>
+                <td dir="ltr" className="text-end text-navy">{t.number}</td>
+                <td dir="ltr" className="text-end">{(() => { const src = sourceLink(db, t); return src ? <Link to={src.to} onClick={(e) => e.stopPropagation()} className="text-navy hover:underline">{src.label}</Link> : '—' })()}</td>
+                <td dir="ltr" className="text-end">{t.date}</td><td>{txLabel[t.type]}</td>
                 <td>{L.assetLabel(t.assetId)}</td><td>{t.party ?? '—'}</td>
                 <td className="num">{money(t.fromValue ?? 0)}</td><td className="num">{money(toDate(t))}</td><td className="num">{money(t.accumulatedAtEvent ?? 0)}</td>
                 <td className="num">{money(nbv(t))}</td><td className="num">{money(t.type === 'sale' ? t.amount : 0)}</td>
@@ -299,7 +301,7 @@ function Disposals() {
           })}
         </tbody>
         {txs.length > 0 && (
-          <tfoot><tr><td colSpan={8}>المجموع:</td><td className="num">{money(txs.reduce((s, t) => s + nbv(t), 0))}</td><td className="num">{money(txs.reduce((s, t) => s + (t.type === 'sale' ? t.amount : 0), 0))}</td><td className="num">{money(txs.reduce((s, t) => s + (t.type === 'sale' ? t.amount : 0) - nbv(t), 0))}</td></tr></tfoot>
+          <tfoot><tr><td colSpan={9}>المجموع:</td><td className="num">{money(txs.reduce((s, t) => s + nbv(t), 0))}</td><td className="num">{money(txs.reduce((s, t) => s + (t.type === 'sale' ? t.amount : 0), 0))}</td><td className="num">{money(txs.reduce((s, t) => s + (t.type === 'sale' ? t.amount : 0) - nbv(t), 0))}</td></tr></tfoot>
         )}
       </table>
       {open && <TxModal tx={open} onClose={() => setOpen(null)} />}

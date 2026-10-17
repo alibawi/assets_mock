@@ -1,11 +1,11 @@
-import { FileStack } from 'lucide-react'
+import { CheckCircle2, FileStack } from 'lucide-react'
 import { useState } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import { ListView } from '../components/ListView'
 import { Badge, Field, Modal, NumInput, Select, Tabs } from '../components/ui'
 import { accumOf, bookValue, grossOf } from '../data/calc'
 import { iqd, kindLabel, money, stateLabel, stateTone } from '../data/format'
-import { draftsFromBillLine, TODAY } from '../data/lifecycle'
+import { capitalize, draftsFromBillLine, TODAY } from '../data/lifecycle'
 import { useLookups } from '../data/lookups'
 import { useStore } from '../data/store'
 import type { Asset, AssetState } from '../data/types'
@@ -22,6 +22,8 @@ export default function AssetsList() {
   const [group, setGroup] = useState('')
   const [branch, setBranch] = useState('')
   const [bill, setBill] = useState(false)
+  const [sel, setSel] = useState<string[]>([])
+  const [capOpen, setCapOpen] = useState(false)
 
   const inTab = (a: Asset, t: TabId) => t === 'all' || (t === 'out' ? a.state === 'sold' || a.state === 'disposed' : a.state === t)
   const filtered = db.assets.filter((a) => (!cls || a.classId === cls) && (!group || a.groupId === group) && (!branch || L.branchOf(a.locationId) === branch))
@@ -68,9 +70,13 @@ export default function AssetsList() {
             <div className="w-44"><Select value={group} onChange={setGroup} options={L.groupOptions} placeholder="كل المجموعات" /></div>
             <div className="w-36"><Select value={branch} onChange={setBranch} options={L.branchOptions} placeholder="كل الفروع" /></div>
             {can('create') && <button type="button" className="btn" onClick={() => setBill(true)}><FileStack className="h-4 w-4" />من سطر فاتورة شراء</button>}
+            {can('post') && <button type="button" className="btn btn-primary" disabled={!sel.length} onClick={() => setCapOpen(true)}><CheckCircle2 className="h-4 w-4" />رسملة المحدد ({sel.length})</button>}
           </>
         }
         columns={[
+          { key: 'sel', label: '', render: (a) => a.state === 'draft' && can('post')
+            ? <input type="checkbox" checked={sel.includes(a.id)} onClick={(e) => e.stopPropagation()} onChange={(e) => setSel((p) => (e.target.checked ? [...p, a.id] : p.filter((x) => x !== a.id)))} title="تحديد للرسملة الجماعية" />
+            : null },
           { key: 'code', label: 'رمز الأصل', render: (a) => <span className="font-medium text-navy" dir="ltr">{a.code}</span> },
           { key: 'name', label: 'اسم الأصل', render: (a) => (
             <span>{a.name}
@@ -89,7 +95,32 @@ export default function AssetsList() {
         ]}
       />
       {bill && <BillLineModal onClose={() => setBill(false)} />}
+      {capOpen && <CapitalizeMany ids={sel} onClose={(done) => { setCapOpen(false); if (done) setSel([]) }} />}
     </>
+  )
+}
+
+/** Capitalization by multi-select from the list (decision c, §8) — e.g. the N drafts of one purchase line. */
+function CapitalizeMany({ ids, onClose }: { ids: string[]; onClose: (done: boolean) => void }) {
+  const { db, run } = useStore()
+  const [date, setDate] = useState(TODAY)
+  const assets = ids.map((id) => db.assets.find((a) => a.id === id)!).filter(Boolean)
+  const submit = () => {
+    const ok = run((d) => {
+      for (const a of assets) {
+        const e = capitalize(d, a.id, date)
+        if (e) return `${a.code}: ${e}`
+      }
+    }, `تمت رسملة ${assets.length} أصول`)
+    if (ok) onClose(true)
+  }
+  return (
+    <Modal title={`رسملة ${assets.length} أصول`} onClose={() => onClose(false)}
+      footer={<><button type="button" className="btn" onClick={() => onClose(false)}>إلغاء</button><button type="button" className="btn btn-primary" onClick={submit}>رسملة</button></>}>
+      <Field label="تاريخ الرسملة" required><input type="date" className="inp w-48" value={date} onChange={(e) => setDate(e.target.value)} /></Field>
+      <ul className="mt-3 max-h-60 list-inside list-disc overflow-y-auto text-sm text-gray-700">{assets.map((a) => <li key={a.id}><span dir="ltr">{a.code}</span> — {a.name} — {money(a.originalValue)}</li>)}</ul>
+      <p className="mt-2 text-xs text-gray-500">تُطبَّق قواعد الرسملة على كل أصل؛ أي خطأ يوقف العملية كلها دون رسملة جزئية.</p>
+    </Modal>
   )
 }
 
