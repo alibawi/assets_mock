@@ -32,6 +32,12 @@ export interface ClassAccounts {
   revalSurplusAcct: string
   /** §3.1 / §5.6.9 AssetSaleClearingAcctCode — revenue account of a sales-invoice line carrying an asset */
   saleClearingAcct: string
+  /** SAP B1 «Revaluation Loss Account» — impairment loss (closes open decision 8) */
+  impairmentLossAcct: string
+  /** SAP B1 «Unplanned Depreciation» — expense of manual (unplanned) depreciation */
+  unplannedExpenseAcct: string
+  /** SAP B1 «Accumulated Unplanned Depr.» — contra account of manual (unplanned) depreciation */
+  unplannedAccumAcct: string
 }
 
 /** §3.1 AssetClass — accounting template. Account codes live in `classAreaAccounts` (§3.1.1). */

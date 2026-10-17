@@ -58,7 +58,7 @@ export const lifeError = (lifeMonths: number, p: Periodicity) =>
 /** §3.1.1 — account codes for (class × area). */
 export function acctsOf(db: DB, classId: string, areaId = DEFAULT_AREA): ClassAccounts {
   const r = db.classAreaAccounts.find((x) => x.classId === classId && x.areaId === areaId)
-  return r ?? { assetAcct: '', accumAcct: '', expenseAcct: '', gainAcct: '', lossAcct: '', revalSurplusAcct: '', saleClearingAcct: '' }
+  return r ?? { assetAcct: '', accumAcct: '', expenseAcct: '', gainAcct: '', lossAcct: '', revalSurplusAcct: '', saleClearingAcct: '', impairmentLossAcct: '', unplannedExpenseAcct: '', unplannedAccumAcct: '' }
 }
 
 export const linesOf = (db: DB, assetId: string) =>
@@ -74,6 +74,9 @@ export const grossOf = (a: Asset) => a.originalValue + a.revaluationAdj
 export const bookValue = (db: DB, a: Asset) => grossOf(a) - accumOf(db, a)
 export const depBase = (a: Asset) => a.originalValue - a.salvage
 /** Remaining depreciable amount = gross − salvage − accumulated. */
+/** Unplanned (manual) part of the accumulated depreciation — posted on its own contra account (SAP B1 model). */
+export const unplannedAccumOf = (db: DB, assetId: string, asOf?: string) =>
+  db.lines.filter((l) => l.assetId === assetId && l.isPosted && l.type === 'manual' && (!asOf || l.date <= asOf)).reduce((s, l) => s + l.amount, 0)
 export const remainingDepreciable = (db: DB, a: Asset) => grossOf(a) - a.salvage - accumOf(db, a)
 
 let seqId = 0

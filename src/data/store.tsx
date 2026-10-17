@@ -5,7 +5,7 @@ import type { DB } from './types'
 
 const KEY = 'enki-assets-mock'
 /** Bump whenever the data model or seed changes — stored data with another version is discarded and reseeded. */
-export const DATA_VERSION = 7
+export const DATA_VERSION = 8
 const LEGACY_KEYS = ['enki-assets-mock-v1', 'enki-assets-mock-v2', 'enki-assets-mock-v3', 'enki-assets-mock-v4', 'enki-assets-mock-v5']
 
 interface Ctx {

@@ -1,6 +1,6 @@
 // One definition of "as of a date" shared by the register, ledger reconciliation, asset ledger
 // and roll-forward — plan §7.1–§7.3. Reversed items count as if they never happened.
-import { acctsOf, monthEnd, prevDay, runJournal } from './calc'
+import { acctsOf, monthEnd, prevDay, runJournal, unplannedAccumOf } from './calc'
 import type { Asset, AssetTx, DB, TxType } from './types'
 
 const VALUE_TX: TxType[] = ['capitalization', 'openingBalance', 'addition', 'acquisitionReduction', 'revaluation', 'impairment']
@@ -84,7 +84,11 @@ export function reconciliationAsOf(db: DB, d: string) {
   const out: { code: string; kind: string; gl: number; mod: number }[] = []
   assetCodes.forEach((code) => out.push({ code, kind: 'القيمة الأصلية', gl: gl.get(code) ?? 0, mod: rows.filter((r) => acctsOf(db, r.a.classId).assetAcct === code).reduce((s, r) => s + r.cost, 0) }))
   ;[...new Set(db.classes.map((c) => acctsOf(db, c.id).saleClearingAcct).filter(Boolean))].forEach((code) => out.push({ code, kind: 'تسوية بيع الأصول (يجب أن يُصفَّر)', gl: gl.get(code) ?? 0, mod: 0 }))
-  accumCodes.forEach((code) => out.push({ code, kind: 'مجمّع الاندثار', gl: -(gl.get(code) ?? 0), mod: rows.filter((r) => acctsOf(db, r.a.classId).accumAcct === code).reduce((s, r) => s + r.accum, 0) }))
+  const unpl = (r: RegisterRow) => (acctsOf(db, r.a.classId).unplannedAccumAcct ? unplannedAccumOf(db, r.a.id, d) : 0)
+  accumCodes.forEach((code) => out.push({ code, kind: 'مجمّع الاندثار', gl: -(gl.get(code) ?? 0), mod: rows.filter((r) => acctsOf(db, r.a.classId).accumAcct === code).reduce((s, r) => s + r.accum - unpl(r), 0) }))
+  ;[...new Set(db.classes.map((c) => acctsOf(db, c.id).unplannedAccumAcct).filter(Boolean))].forEach((code) => out.push({
+    code, kind: 'مجمّع الإهلاك غير المخطط', gl: -(gl.get(code) ?? 0), mod: rows.filter((r) => acctsOf(db, r.a.classId).unplannedAccumAcct === code).reduce((s, r) => s + unpl(r), 0),
+  }))
   return out
 }
 

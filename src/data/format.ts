@@ -2,7 +2,7 @@ import type { AssetKind, AssetState, DepMethod, MaintStatus, MaintType, Periodic
 
 export type Tone = 'gray' | 'green' | 'amber' | 'red' | 'blue'
 
-export const money = (n: number) => Math.round(n).toLocaleString('en-US')
+export const money = (n: number) => (Math.round(n) || 0).toLocaleString('en-US')
 export const iqd = (n: number) => `IQD ${money(n)}`
 
 export const stateLabel: Record<AssetState, string> = {

@@ -44,7 +44,7 @@ eq('T34 LowValue → single 100% line at first period end', [lv.length, lv[0].am
 {
   const db = blankDb()
   db.classes.push({ ...cls, id: 'x' })
-  db.classAreaAccounts.push({ classId: 'x', areaId: 'a01', assetAcct: '1100000002', accumAcct: '1190000002', expenseAcct: '3700000002', gainAcct: '4900000001', lossAcct: '3800000001', revalSurplusAcct: '2500000001', saleClearingAcct: '1300000001' })
+  db.classAreaAccounts.push({ classId: 'x', areaId: 'a01', assetAcct: '1100000002', accumAcct: '1190000002', expenseAcct: '3700000002', gainAcct: '4900000001', lossAcct: '3800000001', revalSurplusAcct: '2500000001', saleClearingAcct: '1300000001', impairmentLossAcct: '3800000002', unplannedExpenseAcct: '3710000001', unplannedAccumAcct: '1191000003' })
   db.assets = [{ ...base, state: 'draft', originalValue: 60000000, lifeMonths: 60, depStartDate: '2025-01-01' }]
   capitalize(db, 't', '2025-01-01')
   db.lines.filter((l) => l.date <= '2025-12-31').forEach((l) => { l.isPosted = true })
@@ -57,7 +57,7 @@ eq('T34 LowValue → single 100% line at first period end', [lv.length, lv[0].am
 {
   const db = blankDb()
   db.classes.push({ ...cls, id: 'x', prorata: 'DAYS' })
-  db.classAreaAccounts.push({ classId: 'x', areaId: 'a01', assetAcct: '1100000003', accumAcct: '1190000003', expenseAcct: '3700000003', gainAcct: '4900000001', lossAcct: '3800000001', revalSurplusAcct: '2500000001', saleClearingAcct: '1300000001' })
+  db.classAreaAccounts.push({ classId: 'x', areaId: 'a01', assetAcct: '1100000003', accumAcct: '1190000003', expenseAcct: '3700000003', gainAcct: '4900000001', lossAcct: '3800000001', revalSurplusAcct: '2500000001', saleClearingAcct: '1300000001', impairmentLossAcct: '3800000002', unplannedExpenseAcct: '3710000001', unplannedAccumAcct: '1191000003' })
   db.assets = [{ ...base, state: 'draft', originalValue: 36000000, lifeMonths: 36, depStartDate: '2027-01-01', prorata: 'DAYS', costCenterId: 'cc5' }]
   capitalize(db, 't', '2027-01-01')
   const run = (ym: string) => { const r = createRun(db, ym, ''); if (typeof r !== 'string') postRun(db, r.id, `${ym}-28`) }
@@ -152,6 +152,32 @@ eq('Seed: 9 runs posted', db.runs.filter((r) => r.status === 'posted').length, 9
   const addDoc = d.docs.find((x) => x.kind === 'costAdj')!
   const sep = d.runs.find((x) => x.periodEnd === '2026-09')!
   eq('Run reversal blocked by the AddCost document; reversing the document unblocks it', [(reverseRun(d, sep.id) ?? '').includes('أحداث تابعة'), reverseDoc(d, addDoc.id), reverseRun(d, sep.id)], [true, null, null])
+}
+
+// SAP B1 account roles: unplanned depreciation and impairment loss on their own accounts
+{
+  const d = structuredClone(db)
+  const mk = (kind: 'manual' | 'reval', opts: object, line: object) => {
+    const x = { ...newDoc(d, kind, '2026-10-05'), ...opts }
+    x.lines = [{ ...blankDocLine(), ...line }]
+    syncDocNumber(d, x); d.docs.push(x)
+    return postDoc(d, x.id)
+  }
+  eq('Manual depreciation document posts', mk('manual', {}, { assetId: 'a16', amount: 1000000 }), null)
+  const man = d.txs.find((t) => t.type === 'manualDepreciation')!
+  eq('Manual depreciation → Dr 3710000001 unplanned expense / Cr 1191000003 unplanned accum', man.journal.map((j) => j.account.slice(0, 10)), ['3710000001', '1191000003'])
+  eq('Impairment document posts', mk('reval', { direction: 'down' }, { assetId: 'a10', newValue: 1000000 }), null)
+  const imp = d.txs.filter((t) => t.type === 'impairment').at(-1)!
+  eq('Impairment → Dr 3800000002 impairment loss (decision 8 closed)', imp.journal[0].account.slice(0, 10), '3800000002')
+  const inv = createSaleInvoiceForAsset(d, 'a16')
+  if (typeof inv !== 'string') { inv.customerId = 'cu3'; inv.postingDate = '2026-11-05' }
+  const r = createRun(d, '2026-10', '')
+  if (typeof r !== 'string') postRun(d, r.id, today)
+  eq('Sale after manual depreciation posts', typeof inv !== 'string' ? postInvoice(d, inv.id) : inv, null)
+  const sale = d.txs.filter((t) => t.type === 'sale').at(-1)!
+  eq('Sale closes both contra accounts (ordinary + unplanned)', sale.journal.some((j) => j.account.startsWith('1191000003') && j.debit === 1000000), true)
+  const rc = reconciliationAsOf(d, today)
+  eq('Reconciliation zero incl. unplanned accum and clearing', rc.filter((x) => Math.round(x.gl - x.mod) !== 0).map((x) => x.code), [])
 }
 
 // Legacy import batch (§9 phase 4)

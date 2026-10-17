@@ -22,6 +22,12 @@ const accounts: Account[] = [
   { code: '1190000002', name: 'مجمّع اندثار آلات ومعدات', postable: true },
   { code: '1190000003', name: 'مجمّع اندثار وسائط نقل', postable: true },
   { code: '1190000004', name: 'مجمّع اندثار أثاث وأجهزة مكتب', postable: true },
+  { code: '1191000000', name: 'مجمّع الإهلاك غير المخطط', postable: false },
+  { code: '1191000001', name: 'مجمّع إهلاك غير مخطط — مباني (مقترح)', postable: true },
+  { code: '1191000002', name: 'مجمّع إهلاك غير مخطط — آلات ومعدات (مقترح)', postable: true },
+  { code: '1191000003', name: 'مجمّع إهلاك غير مخطط — وسائط نقل (مقترح)', postable: true },
+  { code: '1191000004', name: 'مجمّع إهلاك غير مخطط — أثاث وأجهزة مكتب (مقترح)', postable: true },
+  { code: '1191000005', name: 'مجمّع إطفاء غير مخطط — غير ملموسة (مقترح)', postable: true },
   { code: '1195000001', name: 'مجمّع إطفاء موجودات غير ملموسة (مقترح)', postable: true },
   { code: '1200000001', name: 'النقد / المدينون (مقترح)', postable: true },
   { code: '1210000001', name: 'المدينون — العملاء (مقترح)', postable: true },
@@ -36,7 +42,9 @@ const accounts: Account[] = [
   { code: '3700000004', name: 'اندثار أثاث وأجهزة مكاتب', postable: true },
   { code: '3700000005', name: 'إطفاء نفقات إيرادية مؤجلة', postable: true },
   { code: '3700000006', name: 'إطفاء موجودات غير ملموسة (مقترح)', postable: true },
+  { code: '3710000001', name: 'مصروف إهلاك غير مخطط (يدوي) (مقترح)', postable: true },
   { code: '3800000001', name: 'خسائر بيع واستبعاد موجودات ثابتة (مقترح)', postable: true },
+  { code: '3800000002', name: 'خسائر هبوط قيمة الموجودات الثابتة (مقترح)', postable: true },
   { code: '4100000001', name: 'إيرادات المبيعات (مقترح)', postable: true },
   { code: '4900000001', name: 'أرباح بيع موجودات ثابتة (مقترح)', postable: true },
 ]
@@ -52,16 +60,16 @@ const classes: AssetClass[] = [
   { id: 'c8', code: 'LVA', name: 'أصول منخفضة القيمة', foreignName: 'Low-value Assets', kind: 'lowValue', method: 'SL', lifeMonths: 12, decliningFactor: null, periodicity: 'M', prorata: 'NONE', isDepreciable: true, isActive: true },
 ]
 
-const exit = { gainAcct: '4900000001', lossAcct: '3800000001', revalSurplusAcct: '2500000001', saleClearingAcct: '1300000001' }
+const exit = { gainAcct: '4900000001', lossAcct: '3800000001', revalSurplusAcct: '2500000001', saleClearingAcct: '1300000001', impairmentLossAcct: '3800000002', unplannedExpenseAcct: '3710000001' }
 const classAreaAccounts: ClassAreaAccounts[] = [
-  { classId: 'c1', areaId: DEFAULT_AREA, assetAcct: '1100000001', accumAcct: '1190000001', expenseAcct: '3700000001', ...exit },
-  { classId: 'c2', areaId: DEFAULT_AREA, assetAcct: '1100000002', accumAcct: '1190000002', expenseAcct: '3700000002', ...exit },
-  { classId: 'c3', areaId: DEFAULT_AREA, assetAcct: '1100000003', accumAcct: '1190000003', expenseAcct: '3700000003', ...exit },
-  { classId: 'c4', areaId: DEFAULT_AREA, assetAcct: '1100000004', accumAcct: '1190000004', expenseAcct: '3700000004', ...exit },
-  { classId: 'c5', areaId: DEFAULT_AREA, assetAcct: '1100000004', accumAcct: '1190000004', expenseAcct: '3700000004', ...exit },
-  { classId: 'c6', areaId: DEFAULT_AREA, assetAcct: '1100000009', accumAcct: '', expenseAcct: '', ...exit },
-  { classId: 'c7', areaId: DEFAULT_AREA, assetAcct: '1150000001', accumAcct: '1195000001', expenseAcct: '3700000006', ...exit },
-  { classId: 'c8', areaId: DEFAULT_AREA, assetAcct: '1100000004', accumAcct: '1190000004', expenseAcct: '3700000004', ...exit },
+  { classId: 'c1', areaId: DEFAULT_AREA, assetAcct: '1100000001', accumAcct: '1190000001', expenseAcct: '3700000001', ...exit, unplannedAccumAcct: '1191000001' },
+  { classId: 'c2', areaId: DEFAULT_AREA, assetAcct: '1100000002', accumAcct: '1190000002', expenseAcct: '3700000002', ...exit, unplannedAccumAcct: '1191000002' },
+  { classId: 'c3', areaId: DEFAULT_AREA, assetAcct: '1100000003', accumAcct: '1190000003', expenseAcct: '3700000003', ...exit, unplannedAccumAcct: '1191000003' },
+  { classId: 'c4', areaId: DEFAULT_AREA, assetAcct: '1100000004', accumAcct: '1190000004', expenseAcct: '3700000004', ...exit, unplannedAccumAcct: '1191000004' },
+  { classId: 'c5', areaId: DEFAULT_AREA, assetAcct: '1100000004', accumAcct: '1190000004', expenseAcct: '3700000004', ...exit, unplannedAccumAcct: '1191000004' },
+  { classId: 'c6', areaId: DEFAULT_AREA, assetAcct: '1100000009', accumAcct: '', expenseAcct: '', ...exit, unplannedAccumAcct: '', unplannedExpenseAcct: '' },
+  { classId: 'c7', areaId: DEFAULT_AREA, assetAcct: '1150000001', accumAcct: '1195000001', expenseAcct: '3700000006', ...exit, unplannedAccumAcct: '1191000005' },
+  { classId: 'c8', areaId: DEFAULT_AREA, assetAcct: '1100000004', accumAcct: '1190000004', expenseAcct: '3700000004', ...exit, unplannedAccumAcct: '1191000004' },
 ]
 
 const groups: AssetGroup[] = [

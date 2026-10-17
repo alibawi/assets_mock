@@ -22,7 +22,7 @@ type Edit = AssetClass & { acc: Acc }
 const blankClass = (): Edit => ({
   id: '', code: '', name: '', foreignName: '', kind: 'tangible', method: 'SL', lifeMonths: 60, decliningFactor: null, periodicity: 'M', prorata: 'NONE',
   isDepreciable: true, isActive: true,
-  acc: { assetAcct: '', accumAcct: '', expenseAcct: '', gainAcct: '4900000001', lossAcct: '3800000001', revalSurplusAcct: '2500000001', saleClearingAcct: '1300000001' },
+  acc: { assetAcct: '', accumAcct: '', expenseAcct: '', gainAcct: '4900000001', lossAcct: '3800000001', revalSurplusAcct: '2500000001', saleClearingAcct: '1300000001', impairmentLossAcct: '3800000002', unplannedExpenseAcct: '3710000001', unplannedAccumAcct: '' },
 })
 
 export function ClassesPage() {
@@ -117,7 +117,10 @@ export function ClassesPage() {
             <Field label="حساب أرباح الاستبعاد" required>{acct('gainAcct')}</Field>
             <Field label="حساب خسائر الاستبعاد" required>{acct('lossAcct')}</Field>
             <Field label="حساب فائض إعادة التقييم">{acct('revalSurplusAcct')}</Field>
-            <Field label="حساب تسوية بيع الأصول" required hint="حساب إيراد سطر الأصل في فاتورة المبيعات (§5.6.9)">{acct('saleClearingAcct')}</Field>
+            <Field label="حساب تسوية بيع الأصول" required hint="SAP: Revenue Clearing Account — إيراد سطر الأصل في فاتورة المبيعات">{acct('saleClearingAcct')}</Field>
+            <Field label="حساب خسائر هبوط القيمة" required hint="SAP: Revaluation Loss Account (القرار 8)">{acct('impairmentLossAcct')}</Field>
+            <Field label="مصروف الإهلاك غير المخطط" required={edit.kind !== 'land'} hint="SAP: Unplanned Depreciation — الإهلاك اليدوي">{acct('unplannedExpenseAcct')}</Field>
+            <Field label="مجمّع الإهلاك غير المخطط" required={edit.kind !== 'land'} hint="SAP: Accumulated Unplanned Depr.">{acct('unplannedAccumAcct')}</Field>
           </div>
         </Modal>
       )}

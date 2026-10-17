@@ -1,7 +1,7 @@
 // State machine — plan §4.1 (AssetStateManager), run rules — §3.8.1 / §5.4, events — §5.5 / §5.6,
 // journal entries — §5.3. Every function mutates a draft DB and returns an error message, or null on success.
 import {
-  accumOf, acctsOf, bookValue, ccAsOf, DEFAULT_AREA, generateSchedule, grossOf, lifeError, linesOf, monthEnd, monthsIncl, MPP,
+  accumOf, acctsOf, bookValue, ccAsOf, unplannedAccumOf, DEFAULT_AREA, generateSchedule, grossOf, lifeError, linesOf, monthEnd, monthsIncl, MPP,
   daysIncl, nextDay, periodEndOf, periodStartOf, postedLines, remainingDepreciable, renumber, runInScope, simulateRun,
 } from './calc'
 import { blankDocLine, newDoc, postDoc, syncDocNumber } from './documents'
@@ -82,9 +82,9 @@ const regen = (db: DB, a: Asset) => {
 const fail = (msg: string) => msg
 
 /** Required account checks for a class — §3.1 mandatory rule (applied to the default-area row, §3.1.1). */
-export function classAccountErrors(db: DB, c: { assetAcct: string; accumAcct: string; expenseAcct: string; gainAcct: string; lossAcct: string; saleClearingAcct?: string }, depreciable: boolean) {
-  const req: [string, string][] = [['حساب الأصل', c.assetAcct], ['حساب الربح من الاستبعاد', c.gainAcct], ['حساب الخسارة من الاستبعاد', c.lossAcct], ['حساب تسوية بيع الأصول', c.saleClearingAcct ?? '']]
-  if (depreciable) req.push(['حساب مجمّع الاندثار', c.accumAcct], ['حساب مصروف الاندثار', c.expenseAcct])
+export function classAccountErrors(db: DB, c: { assetAcct: string; accumAcct: string; expenseAcct: string; gainAcct: string; lossAcct: string; saleClearingAcct?: string; impairmentLossAcct?: string; unplannedExpenseAcct?: string; unplannedAccumAcct?: string }, depreciable: boolean) {
+  const req: [string, string][] = [['حساب الأصل', c.assetAcct], ['حساب الربح من الاستبعاد', c.gainAcct], ['حساب الخسارة من الاستبعاد', c.lossAcct], ['حساب تسوية بيع الأصول', c.saleClearingAcct ?? ''], ['حساب خسائر هبوط القيمة', c.impairmentLossAcct ?? '']]
+  if (depreciable) req.push(['حساب مجمّع الاندثار', c.accumAcct], ['حساب مصروف الاندثار', c.expenseAcct], ['حساب مصروف الإهلاك غير المخطط', c.unplannedExpenseAcct ?? ''], ['حساب مجمّع الإهلاك غير المخطط', c.unplannedAccumAcct ?? ''])
   const errs: string[] = []
   req.forEach(([label, code]) => {
     const acct = db.accounts.find((x) => x.code === code)
@@ -237,7 +237,7 @@ export function impair(db: DB, id: string, date: string, newValue: number, notes
   // §5.3 / §12.8 — LossOnDisposal until a dedicated impairment account is approved.
   addTx(db, a, 'impairment', date, {
     amount: -diff, fromValue: from, toValue: grossOf(a), notes: notes || `القيمة الدفترية من ${fmt(old)} إلى ${fmt(newValue)}`,
-    journal: [{ account: acc(db, ac.lossAcct), desc: d, debit: diff, credit: 0 }, { account: acc(db, ac.assetAcct), desc: d, debit: 0, credit: diff }],
+    journal: [{ account: acc(db, ac.impairmentLossAcct || ac.lossAcct), desc: d, debit: diff, credit: 0 }, { account: acc(db, ac.assetAcct), desc: d, debit: 0, credit: diff }],
   })
   return null
 }
@@ -318,8 +318,8 @@ export function manualDepreciation(db: DB, id: string, date: string, amount: num
   const tx = addTx(db, a, 'manualDepreciation', date, {
     amount, notes,
     journal: [
-      { account: acc(db, ac.expenseAcct), desc: `إهلاك يدوي ${a.code}`, debit: amount, credit: 0, costCenter: ccName(db, ccAsOf(db, a, date)) },
-      { account: acc(db, ac.accumAcct), desc: `إهلاك يدوي ${a.code}`, debit: 0, credit: amount },
+      { account: acc(db, ac.unplannedExpenseAcct || ac.expenseAcct), desc: `إهلاك يدوي (غير مخطط) ${a.code}`, debit: amount, credit: 0, costCenter: ccName(db, ccAsOf(db, a, date)) },
+      { account: acc(db, ac.unplannedAccumAcct || ac.accumAcct), desc: `إهلاك يدوي (غير مخطط) ${a.code}`, debit: 0, credit: amount },
     ],
   })
   db.lines.push({
@@ -449,7 +449,10 @@ function exitAsset(db: DB, id: string, kind: 'sale' | 'disposal', date: string, 
   }
   const gl = (kind === 'sale' ? price : 0) - p.nbv
   if (kind === 'sale') journal.push({ account: acc(db, ac.saleClearingAcct), desc: `${label} — ${SRC?.sourceDocRef ?? ''}`, debit: price, credit: 0 })
-  if (p.accum) journal.push({ account: acc(db, ac.accumAcct || ac.assetAcct), desc: label, debit: p.accum, credit: 0 })
+  // Close both contra accounts: ordinary (runs, ToDate, imported) and unplanned (manual) — SAP B1 split.
+  const unplanned = ac.unplannedAccumAcct ? unplannedAccumOf(db, a.id) : 0
+  if (p.accum - unplanned) journal.push({ account: acc(db, ac.accumAcct || ac.assetAcct), desc: label, debit: p.accum - unplanned, credit: 0 })
+  if (unplanned) journal.push({ account: acc(db, ac.unplannedAccumAcct), desc: `${label} — مجمّع غير مخطط`, debit: unplanned, credit: 0 })
   if (gl < 0) journal.push({ account: acc(db, ac.lossAcct), desc: `خسارة ${label}`, debit: -gl, credit: 0 })
   journal.push({ account: acc(db, ac.assetAcct), desc: label, debit: 0, credit: p.gross })
   if (gl > 0) journal.push({ account: acc(db, ac.gainAcct), desc: `ربح ${label}`, debit: 0, credit: gl })
