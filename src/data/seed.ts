@@ -1,11 +1,10 @@
 // Demo data. Chart-of-accounts codes follow plan §3.9; codes marked "مقترح" are placeholders the
 // accountant still has to approve (plan §12, open decision 1).
 import { bookValue, DEFAULT_AREA, generateSchedule, monthEnd } from './calc'
-import {
-  capitalize, completeMaint, costCenterTransfer, createRun, dispose, impair, maintJournal, nextNo, pause, postRun, revalue, sell, transfer,
-} from './lifecycle'
+import { blankDocLine, newDoc, postDoc, postInvoice, syncDocNumber } from './documents'
+import { capitalize, completeMaint, createRun, maintJournal, nextNo, pause, postRun } from './lifecycle'
 import type {
-  Account, Asset, AssetClass, AssetGroup, AssetLocation, ClassAreaAccounts, CostCenter, DB, Employee, Maintenance, Partner,
+  Account, Asset, AssetClass, AssetDoc, AssetDocLine, AssetGroup, AssetLocation, ClassAreaAccounts, CostCenter, Customer, DB, Employee, Item, Maintenance, OpeningBatch, Partner,
 } from './types'
 
 const accounts: Account[] = [
@@ -25,6 +24,8 @@ const accounts: Account[] = [
   { code: '1190000004', name: 'مجمّع اندثار أثاث وأجهزة مكتب', postable: true },
   { code: '1195000001', name: 'مجمّع إطفاء موجودات غير ملموسة (مقترح)', postable: true },
   { code: '1200000001', name: 'النقد / المدينون (مقترح)', postable: true },
+  { code: '1210000001', name: 'المدينون — العملاء (مقترح)', postable: true },
+  { code: '1300000001', name: 'تسوية بيع الأصول (وسيط — مقترح)', postable: true },
   { code: '2100000001', name: 'الموردون (مقترح)', postable: true },
   { code: '2500000001', name: 'فائض إعادة التقييم (مقترح)', postable: true },
   { code: '3600000001', name: 'مصروف صيانة الموجودات (مقترح)', postable: true },
@@ -36,6 +37,7 @@ const accounts: Account[] = [
   { code: '3700000005', name: 'إطفاء نفقات إيرادية مؤجلة', postable: true },
   { code: '3700000006', name: 'إطفاء موجودات غير ملموسة (مقترح)', postable: true },
   { code: '3800000001', name: 'خسائر بيع واستبعاد موجودات ثابتة (مقترح)', postable: true },
+  { code: '4100000001', name: 'إيرادات المبيعات (مقترح)', postable: true },
   { code: '4900000001', name: 'أرباح بيع موجودات ثابتة (مقترح)', postable: true },
 ]
 
@@ -50,7 +52,7 @@ const classes: AssetClass[] = [
   { id: 'c8', code: 'LVA', name: 'أصول منخفضة القيمة', foreignName: 'Low-value Assets', kind: 'lowValue', method: 'SL', lifeMonths: 12, decliningFactor: null, periodicity: 'M', prorata: 'NONE', isDepreciable: true, isActive: true },
 ]
 
-const exit = { gainAcct: '4900000001', lossAcct: '3800000001', revalSurplusAcct: '2500000001' }
+const exit = { gainAcct: '4900000001', lossAcct: '3800000001', revalSurplusAcct: '2500000001', saleClearingAcct: '1300000001' }
 const classAreaAccounts: ClassAreaAccounts[] = [
   { classId: 'c1', areaId: DEFAULT_AREA, assetAcct: '1100000001', accumAcct: '1190000001', expenseAcct: '3700000001', ...exit },
   { classId: 'c2', areaId: DEFAULT_AREA, assetAcct: '1100000002', accumAcct: '1190000002', expenseAcct: '3700000002', ...exit },
@@ -105,6 +107,38 @@ const costCenters: CostCenter[] = [
 ]
 
 const CUTOFF = '2025-12-31' // go-live: period end of December 2025 (§3.5 ImportCutoffDate)
+
+const items: Item[] = [
+  { id: 'it1', code: 'FA-SALE', name: 'بيع أصل ثابت', isFixedAsset: true, price: 0, revenueAcct: '' },
+  { id: 'it2', code: 'SRV-INST', name: 'خدمة تركيب ونقل', isFixedAsset: false, price: 250000, revenueAcct: '4100000001' },
+  { id: 'it3', code: 'SCRAP', name: 'خردة ومواد مستعملة (كغم)', isFixedAsset: false, price: 400, revenueAcct: '4100000001' },
+]
+const customers: Customer[] = [
+  { id: 'cu1', name: 'معرض السلام للسيارات' }, { id: 'cu2', name: 'شركة الفرات للتجارة العامة' },
+  { id: 'cu3', name: 'مجموعة الرافدين الصناعية' }, { id: 'cu4', name: 'محمد جاسم الحسيني' },
+]
+
+/** Seed helper: create and post a transaction document (§8). */
+function doc(db: DB, kind: AssetDoc['kind'], date: string, opts: Partial<AssetDoc>, lines: Partial<AssetDocLine>[]) {
+  const d = { ...newDoc(db, kind, date), ...opts }
+  d.lines = lines.map((l) => ({ ...blankDocLine(), ...l }))
+  syncDocNumber(db, d)
+  db.docs.push(d)
+  const e = postDoc(db, d.id, date)
+  if (e) throw new Error(`seed ${kind}: ${e}`)
+}
+
+/** Seed helper: sale through a posted sales invoice (§5.6.9). */
+function saleInvoice(db: DB, date: string, customerId: string, assetId: string, price: number) {
+  const inv = {
+    id: `inv${db.invoices.length + 1}`, number: `SI-2026-${String(db.invoices.length + 1).padStart(4, '0')}`, customerId, organization: 'شركة إنكي للتجارة العامة',
+    currency: 'IQD', invoiceDate: date, postingDate: date, status: 'draft' as const, notes: 'بيع بالمزايدة', saleTxIds: [], journal: [],
+    lines: [{ id: `il-${assetId}`, itemId: 'it1', assetId, qty: 1, price, revenueAcct: '1300000001', description: db.assets.find((a) => a.id === assetId)!.name }],
+  }
+  db.invoices.push(inv)
+  const e = postInvoice(db, inv.id)
+  if (e) throw new Error(`seed invoice: ${e}`)
+}
 
 // name, class, group, location, custodian, costCenter, partner, acquisition, original, salvage,
 // legacy? [importedAccum, remainingLifeMonthsAtImport], sourceDocRef, serial
@@ -189,11 +223,25 @@ function importLegacy(db: DB) {
       { account: 'أرصدة افتتاحية — خارج الوحدة', desc: `رصيد افتتاحي ${a.code}`, debit: 0, credit: a.originalValue - a.importedAccum },
     ]
     db.txs.push({
-      id: `tx-ob-${a.id}`, number: batch, docType: '239', assetId: a.id, type: 'openingBalance', date: CUTOFF, amount: a.originalValue,
+      id: `tx-ob-${a.id}`, number: batch, docType: '239', assetId: a.id, type: 'openingBalance', date: CUTOFF, amount: a.originalValue, sourceDocType: '239', sourceDocId: 'ob1', sourceDocRef: batch,
       fromValue: 0, toValue: a.originalValue, isReversed: false, journal: [], externalJournal: ext, externalNote: 'الأرصدة الافتتاحية للأستاذ (عملية مستقلة)',
       notes: `استيراد رصيد افتتاحي — مجمّع ${a.importedAccum.toLocaleString('en-US')}، عمر متبقٍّ ${a.remainingLifeAtImport} شهراً`, user: 'superadmin',
     })
   })
+}
+
+function legacyBatch(db: DB): OpeningBatch {
+  const legacy = db.assets.filter((a) => a.isLegacy)
+  const code = (id: string, list: { id: string; code: string }[]) => list.find((x) => x.id === id)!.code
+  return {
+    id: 'ob1', number: 'AOB-2025-0001', cutoffDate: CUTOFF, fileName: 'legacy-assets-2025.xlsx', status: 'committed', glLoaded: true,
+    assetIds: legacy.map((a) => a.id), committedAt: '2026-01-02', notes: 'أرصدة الأصول من النظام السابق عند بدء التشغيل',
+    rows: legacy.map((a) => ({
+      id: `ir-${a.id}`, code: a.serial, name: a.name, classCode: code(a.classId, db.classes), locationCode: code(a.locationId, db.locations),
+      acquisitionDate: a.acquisitionDate, depStartDate: a.depStartDate, originalValue: a.originalValue, salvage: a.salvage, importedAccum: a.importedAccum,
+      lifeMonths: a.lifeMonths, remainingLife: a.remainingLifeAtImport ?? 0, costCenterCode: code(a.costCenterId, db.costCenters),
+    })),
+  }
 }
 
 export function seed(): DB {
@@ -201,26 +249,27 @@ export function seed(): DB {
     classes: structuredClone(classes), classAreaAccounts: structuredClone(classAreaAccounts),
     areas: [{ id: DEFAULT_AREA, code: '01', name: 'Local GAAP', postsToGl: true, isDefault: true, isActive: true }],
     areaSettings: [], groups, locations, employees, partners, costCenters, accounts,
-    assets: buildAssets(), lines: [], txs: [], runs: [], maintenance: [],
+    assets: buildAssets(), lines: [], txs: [], runs: [], maintenance: [], items, customers, invoices: [], docs: [], batches: [],
     settings: { fiscalStartMonth: 1, capThreshold: 5000000, lowValueThreshold: null },
     role: 'superadmin',
   }
   billLineDrafts(db)
   importLegacy(db)
+  db.batches.push(legacyBatch(db))
 
   const before: Record<number, ((d: DB) => void)[]> = {
-    7: [(d) => dispose(d, 'a11', '2026-07-10', 'تلف وحدة الطباعة — شطب بقرار لجنة الجرد')],
-    8: [(d) => sell(d, 'a7', '2026-08-20', 21000000, 'معرض السلام للسيارات', 'بيع بالمزايدة')],
+    7: [(d) => doc(d, 'disposal', '2026-07-10', { notes: 'تلف وحدة الطباعة — شطب بقرار لجنة الجرد' }, [{ assetId: 'a11' }])],
+    8: [(d) => saleInvoice(d, '2026-08-20', 'cu1', 'a7', 21000000)],
     9: [
       (d) => pause(d, 'a5', '2026-09-01', 'عطل في المحرك — بانتظار قطع غيار'),
-      (d) => costCenterTransfer(d, 'a8', '2026-09-01', 'cc5', ''),
-      (d) => transfer(d, 'a8', '2026-09-05', { locationId: 'l21', custodianId: 'e6' }, 'انتقال السيارة إلى فرع البصرة'),
+      (d) => doc(d, 'transfer', '2026-09-01', { transferType: 'costCenter', notes: 'إعادة توزيع السيارة على المبيعات' }, [{ assetId: 'a8', toCostCenterId: 'cc5' }]),
+      (d) => doc(d, 'transfer', '2026-09-05', { transferType: 'location', notes: 'انتقال السيارة إلى فرع البصرة' }, [{ assetId: 'a8', toLocationId: 'l21', toCustodianId: 'e6' }]),
     ],
   }
   const after: Record<number, ((d: DB) => void)[]> = {
-    6: [(d) => revalue(d, 'a1', '2026-06-30', bookValue(d, d.assets[0]) + 250000000, 'تقييم المكتب الاستشاري العراقي للعقارات')],
-    7: [(d) => transfer(d, 'a10', '2026-07-20', { locationId: 'l21', custodianId: 'e6' }, '')],
-    8: [(d) => impair(d, 'a12', '2026-09-02', bookValue(d, d.assets[11]) - 1500000, 'تلف وحدة التبريد بعد ارتفاع الحرارة — تقرير فني')],
+    6: [(d) => doc(d, 'reval', '2026-06-30', { direction: 'up', notes: 'تقييم المكتب الاستشاري العراقي للعقارات' }, [{ assetId: 'a1', newValue: bookValue(d, d.assets[0]) + 250000000 }])],
+    7: [(d) => doc(d, 'transfer', '2026-07-20', { transferType: 'location' }, [{ assetId: 'a10', toLocationId: 'l21', toCustodianId: 'e6' }])],
+    8: [(d) => doc(d, 'reval', '2026-09-02', { direction: 'down', notes: 'تلف وحدة التبريد بعد ارتفاع الحرارة — تقرير فني' }, [{ assetId: 'a12', newValue: bookValue(d, d.assets[11]) - 1500000 }])],
   }
 
   for (let m = 1; m <= 9; m++) {

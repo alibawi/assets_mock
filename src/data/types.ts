@@ -1,4 +1,4 @@
-// Data model follows docs/source/assets-management-module-plan-ar.md §3 (revision 3).
+// Data model follows docs/source/assets-management-module-plan-ar.md §3 (revision 3 + decisions of 2026-10-17).
 
 /** §3.1 DepreciationMethod */
 export type DepMethod = 'SL' | 'DB' | 'DBSL' | 'NONE'
@@ -30,6 +30,8 @@ export interface ClassAccounts {
   gainAcct: string
   lossAcct: string
   revalSurplusAcct: string
+  /** §3.1 / §5.6.9 AssetSaleClearingAcctCode — revenue account of a sales-invoice line carrying an asset */
+  saleClearingAcct: string
 }
 
 /** §3.1 AssetClass — accounting template. Account codes live in `classAreaAccounts` (§3.1.1). */
@@ -167,6 +169,9 @@ export interface AssetTx {
   /** Depreciation to date posted inside a Sale / Disposal (§5.6.1) */
   toDateAmount?: number
   party?: string
+  /** §3.7 SourceDoc* — sales invoice (Sale), purchase bill / credit note (Addition / Reduction), transaction document, import batch */
+  sourceDocType?: string
+  sourceDocId?: string
   sourceDocRef?: string
   reversedTxId?: string
   isReversed: boolean
@@ -218,6 +223,97 @@ export interface Maintenance {
   journal: JournalLine[]
 }
 
+/** Sales module (mock) — §5.6.9. `isFixedAsset` lives on the item, never on the invoice line. */
+export interface Item { id: string; code: string; name: string; isFixedAsset: boolean; price: number; revenueAcct: string }
+export interface Customer { id: string; name: string }
+export interface SaleInvoiceLine { id: string; itemId: string; assetId: string; qty: number; price: number; revenueAcct: string; description: string }
+export type InvoiceStatus = 'draft' | 'posted' | 'cancelled'
+export interface SaleInvoice {
+  id: string
+  number: string
+  customerId: string
+  organization: string
+  currency: string
+  invoiceDate: string
+  postingDate: string
+  status: InvoiceStatus
+  lines: SaleInvoiceLine[]
+  notes: string
+  /** Sale transactions created when the invoice was posted */
+  saleTxIds: string[]
+  /** The invoice's own entry (customer / revenue lines) */
+  journal: JournalLine[]
+}
+
+/** §8 — transaction documents (Type A pages), each with its own number, post and reverse. */
+export type DocKind = 'reval' | 'disposal' | 'costAdj' | 'manual' | 'transfer'
+export type DocStatus = 'draft' | 'posted' | 'reversed'
+export interface AssetDocLine {
+  id: string
+  assetId: string
+  /** reval: new book value */
+  newValue: number
+  /** costAdj / manual: amount */
+  amount: number
+  /** costAdj: purchase bill / credit note reference (no module entry when present) */
+  sourceDocRef: string
+  /** costAdj addition: optional new remaining life (months) */
+  newRemainingLife: number
+  /** transfer */
+  toLocationId: string
+  toCustodianId: string
+  toCostCenterId: string
+}
+export interface AssetDoc {
+  id: string
+  kind: DocKind
+  number: string
+  docType: string
+  date: string
+  status: DocStatus
+  /** reval: up = 233 revaluation, down = 238 impairment */
+  direction: 'up' | 'down'
+  /** costAdj: addition = 240, reduction = 241 */
+  adjType: 'addition' | 'reduction'
+  /** transfer: location / custodian (234) or cost center (237) */
+  transferType: 'location' | 'costCenter'
+  lines: AssetDocLine[]
+  notes: string
+  txIds: string[]
+  postedAt: string | null
+}
+
+/** §9 phase 4 — legacy import batch (239). */
+export interface ImportRow {
+  id: string
+  code: string
+  name: string
+  classCode: string
+  locationCode: string
+  acquisitionDate: string
+  depStartDate: string
+  originalValue: number
+  salvage: number
+  importedAccum: number
+  lifeMonths: number
+  remainingLife: number
+  costCenterCode: string
+}
+export type BatchStatus = 'draft' | 'committed' | 'reversed'
+export interface OpeningBatch {
+  id: string
+  number: string
+  cutoffDate: string
+  fileName: string
+  status: BatchStatus
+  rows: ImportRow[]
+  /** Simulates the ledger opening balances entered by Finance's own process */
+  glLoaded: boolean
+  assetIds: string[]
+  committedAt: string | null
+  notes: string
+}
+
 export interface Settings {
   /** First month of the fiscal year (1–12); quarters/years follow it (§5.1.1, §12.7) */
   fiscalStartMonth: number
@@ -243,6 +339,11 @@ export interface DB {
   txs: AssetTx[]
   runs: DepRun[]
   maintenance: Maintenance[]
+  items: Item[]
+  customers: Customer[]
+  invoices: SaleInvoice[]
+  docs: AssetDoc[]
+  batches: OpeningBatch[]
   settings: Settings
   role: RoleId
 }

@@ -71,6 +71,7 @@ export function glBalancesAsOf(db: DB, d: string) {
   db.runs.filter((r) => r.status === 'posted' && monthEnd(r.periodEnd) <= d).forEach((r) => {
     runJournal(db, r).forEach((j) => add(codeOf(j.account), j.debit - j.credit))
   })
+  db.invoices.filter((i) => i.status === 'posted' && i.postingDate <= d).forEach((i) => i.journal.forEach((j) => add(codeOf(j.account), j.debit - j.credit)))
   db.maintenance.filter((m) => m.status === 'done' && (m.doneDate ?? '') <= d).forEach((m) => m.journal.forEach((j) => add(codeOf(j.account), j.debit - j.credit)))
   return gl
 }
@@ -82,6 +83,7 @@ export function reconciliationAsOf(db: DB, d: string) {
   const accumCodes = [...new Set(db.classes.map((c) => acctsOf(db, c.id).accumAcct).filter(Boolean))]
   const out: { code: string; kind: string; gl: number; mod: number }[] = []
   assetCodes.forEach((code) => out.push({ code, kind: 'القيمة الأصلية', gl: gl.get(code) ?? 0, mod: rows.filter((r) => acctsOf(db, r.a.classId).assetAcct === code).reduce((s, r) => s + r.cost, 0) }))
+  ;[...new Set(db.classes.map((c) => acctsOf(db, c.id).saleClearingAcct).filter(Boolean))].forEach((code) => out.push({ code, kind: 'تسوية بيع الأصول (يجب أن يُصفَّر)', gl: gl.get(code) ?? 0, mod: 0 }))
   accumCodes.forEach((code) => out.push({ code, kind: 'مجمّع الاندثار', gl: -(gl.get(code) ?? 0), mod: rows.filter((r) => acctsOf(db, r.a.classId).accumAcct === code).reduce((s, r) => s + r.accum, 0) }))
   return out
 }

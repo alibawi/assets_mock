@@ -1,7 +1,8 @@
 // Engine checks against plan §10 / Appendix A. Run: npm run check
 import { generateSchedule } from '../src/data/calc'
 import { accumAsOf, assetLedger, costAsOf, reconciliationAsOf, registerAsOf, rollForward } from '../src/data/asof'
-import { addCost, capitalize, costCenterTransfer, createRun, postRun, reverseExit, reverseRun, revalue, sell, undoCapitalization } from '../src/data/lifecycle'
+import { addCost, capitalize, costCenterTransfer, createRun, postRun, reverseExit, reverseRun, revalue, sellFromInvoice, undoCapitalization } from '../src/data/lifecycle'
+import { blankDocLine, cancelInvoice, commitBatch, createSaleInvoiceForAsset, newDoc, postDoc, postInvoice, reverseBatch, reverseDoc, sampleImportRows, batchErrors, syncDocNumber } from '../src/data/documents'
 import { seed } from '../src/data/seed'
 import type { Asset, AssetClass, DB } from '../src/data/types'
 
@@ -43,7 +44,7 @@ eq('T34 LowValue → single 100% line at first period end', [lv.length, lv[0].am
 {
   const db = blankDb()
   db.classes.push({ ...cls, id: 'x' })
-  db.classAreaAccounts.push({ classId: 'x', areaId: 'a01', assetAcct: '1100000002', accumAcct: '1190000002', expenseAcct: '3700000002', gainAcct: '4900000001', lossAcct: '3800000001', revalSurplusAcct: '2500000001' })
+  db.classAreaAccounts.push({ classId: 'x', areaId: 'a01', assetAcct: '1100000002', accumAcct: '1190000002', expenseAcct: '3700000002', gainAcct: '4900000001', lossAcct: '3800000001', revalSurplusAcct: '2500000001', saleClearingAcct: '1300000001' })
   db.assets = [{ ...base, state: 'draft', originalValue: 60000000, lifeMonths: 60, depStartDate: '2025-01-01' }]
   capitalize(db, 't', '2025-01-01')
   db.lines.filter((l) => l.date <= '2025-12-31').forEach((l) => { l.isPosted = true })
@@ -56,20 +57,32 @@ eq('T34 LowValue → single 100% line at first period end', [lv.length, lv[0].am
 {
   const db = blankDb()
   db.classes.push({ ...cls, id: 'x', prorata: 'DAYS' })
-  db.classAreaAccounts.push({ classId: 'x', areaId: 'a01', assetAcct: '1100000003', accumAcct: '1190000003', expenseAcct: '3700000003', gainAcct: '4900000001', lossAcct: '3800000001', revalSurplusAcct: '2500000001' })
+  db.classAreaAccounts.push({ classId: 'x', areaId: 'a01', assetAcct: '1100000003', accumAcct: '1190000003', expenseAcct: '3700000003', gainAcct: '4900000001', lossAcct: '3800000001', revalSurplusAcct: '2500000001', saleClearingAcct: '1300000001' })
   db.assets = [{ ...base, state: 'draft', originalValue: 36000000, lifeMonths: 36, depStartDate: '2027-01-01', prorata: 'DAYS', costCenterId: 'cc5' }]
   capitalize(db, 't', '2027-01-01')
   const run = (ym: string) => { const r = createRun(db, ym, ''); if (typeof r !== 'string') postRun(db, r.id, `${ym}-28`) }
   run('2027-01'); run('2027-02')
-  const err = sell(db, 't', '2027-03-20', 20000000, 'buyer', '')
+  eq('§5.6.9 direct sale outside an invoice is refused', (sellFromInvoice(db, 't', '2027-03-20', 1, 'x', '') ?? '').includes('فاتورة'), true)
+  const inv = createSaleInvoiceForAsset(db, 't')
+  if (typeof inv === 'string') throw new Error(inv)
+  eq('Path B: draft invoice with the asset line, qty 1, revenue = clearing', [inv.status, inv.lines[0].qty, inv.lines[0].revenueAcct], ['draft', 1, '1300000001'])
+  eq('11a no customer → refused', (postInvoice(db, inv.id) ?? '').length > 0, true)
+  inv.customerId = 'cu1'; inv.postingDate = '2027-03-20'; inv.lines[0].price = 20000000
+  const err = postInvoice(db, inv.id)
   const tx = db.txs.find((t) => t.type === 'sale')!
   const td = db.lines.find((l) => l.txId === tx.id)!
   const loss = tx.journal.find((j) => j.account.startsWith('3800000001'))?.debit
   eq('A.11 ToDate 645,161, accum 2,645,161, loss 13,354,839', [err, td.amount, tx.accumulatedAtEvent, loss], [null, 645161, 2645161, 13354839])
   eq('A.11 sale entry balances', tx.journal.reduce((s, j) => s + j.debit - j.credit, 0), 0)
+  const clearing = [...inv.journal, ...tx.journal].filter((j) => j.account.startsWith('1300000001')).reduce((s, j) => s + j.debit - j.credit, 0)
+  eq('T11 sale: invoice entry + exit entry, clearing account nets to zero; Sale carries the invoice', [clearing, tx.sourceDocRef, db.assets[0].state], [0, inv.number, 'sold'])
   const led1 = assetLedger(db, db.assets[0], '2027-01-01', '2027-12-31', (t) => t.type).rows
   eq('T37 ledger after sale ends at zero, ToDate row present', [led1.at(-1)!.runCost, led1.at(-1)!.runAccum, led1.some((r) => r.dep === 645161)], [0, 0, true])
-  eq('T30 ReverseSale restores Running and regenerates', [reverseExit(db, tx.id), db.assets[0].state, db.lines.filter((l) => !l.isPosted).length, db.lines.some((l) => l.type === 'toDate')], [null, 'running', 34, false])
+  eq('ReverseSale is not a manual action', (reverseExit(db, tx.id) ?? '').includes('لا يُستدعى يدوياً'), true)
+  eq('T30 cancelling the invoice runs ReverseSale: Running and regenerated', [cancelInvoice(db, inv.id), db.assets[0].state, db.lines.filter((l) => !l.isPosted).length, db.lines.some((l) => l.type === 'toDate')], [null, 'running', 34, false])
+  const inv2 = createSaleInvoiceForAsset(db, 't')
+  eq('11a the same asset in two non-cancelled invoices is refused', typeof createSaleInvoiceForAsset(db, 't') === 'string' && typeof inv2 !== 'string', true)
+  if (typeof inv2 !== 'string') cancelInvoice(db, inv2.id)
   const led2 = assetLedger(db, db.assets[0], '2027-01-01', '2027-12-31', (t) => t.type).rows
   eq('T37 ledger after ReverseSale equals the register', [led2.at(-1)!.runCost, led2.at(-1)!.runAccum], [costAsOf(db, db.assets[0], '2027-12-31'), accumAsOf(db, db.assets[0], '2027-12-31')])
   eq('A.9 retroactive cost-center transfer (15 Feb) rejected', (costCenterTransfer(db, 't', '2027-02-15', 'cc6', '') ?? '').includes('بأثر رجعي'), true)
@@ -115,7 +128,43 @@ eq('Seed: 9 runs posted', db.runs.filter((r) => r.status === 'posted').length, 9
   const oct = d.runs.find((x) => x.periodEnd === '2026-10' && x.status === 'posted')!
   eq('LIFO: October reverses', reverseRun(d, oct.id), null)
   eq('Dependent event: September blocked by the AddCost of 1 Oct', (reverseRun(d, sep.id) ?? '').includes('أحداث تابعة'), true)
-  eq('Sale before posting October → PostDepreciationFirst', (sell(d, 'a6', '2026-11-20', 1000, 'x', '') ?? '').includes('PostDepreciationFirst'), true)
+  const inv = createSaleInvoiceForAsset(d, 'a6')
+  if (typeof inv !== 'string') { inv.customerId = 'cu2'; inv.postingDate = '2026-11-20' }
+  eq('11a invoice before October is posted → PostDepreciationFirst', typeof inv !== 'string' && (postInvoice(d, inv.id) ?? '').includes('PostDepreciationFirst'), true)
+  const draftAsset = d.assets.find((a) => a.state === 'draft')!
+  eq('11a invoice for a Draft asset → refused', typeof createSaleInvoiceForAsset(d, draftAsset.id) === 'string', true)
+  if (typeof inv !== 'string') {
+    inv.lines[0].assetId = ''
+    eq('11a fixed-asset item without an asset → refused', (postInvoice(d, inv.id) ?? '').includes('بلا أصل'), true)
+  }
+}
+
+// Transaction documents (§8): post and reverse; reversal clears the dependent event before a run reversal
+{
+  const d = structuredClone(db)
+  const doc = { ...newDoc(d, 'reval', '2026-10-05'), direction: 'up' as const }
+  doc.lines = [{ ...blankDocLine(), assetId: 'a16', newValue: 40000000 }]
+  syncDocNumber(d, doc); d.docs.push(doc)
+  eq('Revaluation document posts with its own number (ARV)', [postDoc(d, doc.id), doc.number.startsWith('ARV-'), d.txs.filter((t) => t.sourceDocId === doc.id).length], [null, true, 1])
+  eq('Revaluation document reverses', [reverseDoc(d, doc.id), doc.status], [null, 'reversed'])
+  const rc = reconciliationAsOf(d, today)
+  eq('Reconciliation still zero after post + reverse', rc.filter((r) => Math.round(r.gl - r.mod) !== 0).map((r) => r.code), [])
+  const addDoc = d.docs.find((x) => x.kind === 'costAdj')!
+  const sep = d.runs.find((x) => x.periodEnd === '2026-09')!
+  eq('Run reversal blocked by the AddCost document; reversing the document unblocks it', [(reverseRun(d, sep.id) ?? '').includes('أحداث تابعة'), reverseDoc(d, addDoc.id), reverseRun(d, sep.id)], [true, null, null])
+}
+
+// Legacy import batch (§9 phase 4)
+{
+  const d = structuredClone(db)
+  const b = { id: 'obx', number: 'AOB-2026-0001', cutoffDate: '2026-09-30', fileName: 'x.xlsx', status: 'draft' as const, rows: sampleImportRows(), glLoaded: true, assetIds: [], committedAt: null, notes: '' }
+  d.batches.push(b)
+  eq('Import: sample file has row errors and commit is blocked', [batchErrors(d, b) > 0, (commitBatch(d, b.id) ?? '').includes('خطأ')], [true, true])
+  b.rows = b.rows.filter((r) => !['OLD-BLD-005', 'OLD-VEH-131'].includes(r.code))
+  eq('Import: clean rows commit as Running/Closed legacy assets', [commitBatch(d, b.id), b.assetIds.length, d.assets.filter((a) => b.assetIds.includes(a.id) && a.isLegacy).length], [null, 4, 4])
+  const rc = reconciliationAsOf(d, today)
+  eq('Import: reconciliation zero when the ledger opening balances are loaded', rc.filter((r) => Math.round(r.gl - r.mod) !== 0).map((r) => r.code), [])
+  eq('Import: reverse before any posting succeeds', reverseBatch(d, b.id), null)
 }
 
 console.log(fails ? `\n${fails} check(s) failed` : '\nall checks passed')

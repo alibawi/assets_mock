@@ -58,7 +58,7 @@ export const lifeError = (lifeMonths: number, p: Periodicity) =>
 /** §3.1.1 — account codes for (class × area). */
 export function acctsOf(db: DB, classId: string, areaId = DEFAULT_AREA): ClassAccounts {
   const r = db.classAreaAccounts.find((x) => x.classId === classId && x.areaId === areaId)
-  return r ?? { assetAcct: '', accumAcct: '', expenseAcct: '', gainAcct: '', lossAcct: '', revalSurplusAcct: '' }
+  return r ?? { assetAcct: '', accumAcct: '', expenseAcct: '', gainAcct: '', lossAcct: '', revalSurplusAcct: '', saleClearingAcct: '' }
 }
 
 export const linesOf = (db: DB, assetId: string) =>

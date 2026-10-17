@@ -4,6 +4,7 @@ import {
   accumOf, acctsOf, bookValue, ccAsOf, DEFAULT_AREA, generateSchedule, grossOf, lifeError, linesOf, monthEnd, monthsIncl, MPP,
   daysIncl, nextDay, periodEndOf, periodStartOf, postedLines, remainingDepreciable, renumber, runInScope, simulateRun,
 } from './calc'
+import { blankDocLine, newDoc, postDoc, syncDocNumber } from './documents'
 import type { Asset, AssetState, AssetTx, DB, DepRun, JournalLine, Maintenance, TxType } from './types'
 
 export const TODAY = '2026-10-16'
@@ -34,13 +35,26 @@ const get = (db: DB, id: string) => db.assets.find((x) => x.id === id)!
 const ccName = (db: DB, id: string) => db.costCenters.find((c) => c.id === id)?.name
 const fmt = (n: number) => Math.round(n).toLocaleString('en-US')
 
-function addTx(db: DB, a: Asset, type: TxType, date: string, p: Partial<AssetTx>) {
+/** Source of the transactions being written (transaction document, sales invoice, import batch) — §3.7 SourceDoc*. */
+export interface TxSource { number?: string; sourceDocType: string; sourceDocId: string; sourceDocRef: string }
+let SRC: TxSource | null = null
+export function withSource<T>(src: TxSource, fn: () => T): T {
+  const prev = SRC
+  SRC = src
+  try { return fn() } finally { SRC = prev }
+}
+
+export const allNumbers = (db: DB) => [...new Set([...db.txs.map((t) => t.number), ...db.docs.map((d) => d.number)])]
+
+export function addTx(db: DB, a: Asset, type: TxType, date: string, p: Partial<AssetTx>) {
   const docType = txDocType[type]
   const tx: AssetTx = {
     id: `tx${db.txs.length + 1}-${Math.random().toString(36).slice(2, 6)}`,
-    number: nextNo(docPrefix[docType], db.txs.map((t) => t.number), date.slice(0, 4)),
+    number: SRC?.number && docType ? SRC.number : nextNo(docPrefix[docType], allNumbers(db), date.slice(0, 4)),
     docType, assetId: a.id, type, date, amount: 0, fromValue: null, toValue: null, isReversed: false,
-    journal: [], externalJournal: [], notes: '', user: 'superadmin', ...p,
+    journal: [], externalJournal: [], notes: '', user: 'superadmin',
+    ...(SRC ? { sourceDocType: SRC.sourceDocType, sourceDocId: SRC.sourceDocId, sourceDocRef: SRC.sourceDocRef } : {}),
+    ...p,
   }
   db.txs.push(tx)
   return tx
@@ -68,8 +82,8 @@ const regen = (db: DB, a: Asset) => {
 const fail = (msg: string) => msg
 
 /** Required account checks for a class — §3.1 mandatory rule (applied to the default-area row, §3.1.1). */
-export function classAccountErrors(db: DB, c: { assetAcct: string; accumAcct: string; expenseAcct: string; gainAcct: string; lossAcct: string }, depreciable: boolean) {
-  const req: [string, string][] = [['حساب الأصل', c.assetAcct], ['حساب الربح من الاستبعاد', c.gainAcct], ['حساب الخسارة من الاستبعاد', c.lossAcct]]
+export function classAccountErrors(db: DB, c: { assetAcct: string; accumAcct: string; expenseAcct: string; gainAcct: string; lossAcct: string; saleClearingAcct?: string }, depreciable: boolean) {
+  const req: [string, string][] = [['حساب الأصل', c.assetAcct], ['حساب الربح من الاستبعاد', c.gainAcct], ['حساب الخسارة من الاستبعاد', c.lossAcct], ['حساب تسوية بيع الأصول', c.saleClearingAcct ?? '']]
   if (depreciable) req.push(['حساب مجمّع الاندثار', c.accumAcct], ['حساب مصروف الاندثار', c.expenseAcct])
   const errs: string[] = []
   req.forEach(([label, code]) => {
@@ -415,6 +429,7 @@ export function exitPreview(db: DB, a: Asset, d: string) {
 }
 
 function exitAsset(db: DB, id: string, kind: 'sale' | 'disposal', date: string, price: number, buyer: string, notes: string): string | null {
+  if (kind === 'sale' && !SRC) return fail('البيع يتم حصراً عبر فاتورة المبيعات (§5.6.9)')
   const a = get(db, id)
   if (!['running', 'paused', 'closed'].includes(a.state)) return fail(kind === 'sale' ? 'لا يمكن بيع أصل بهذه الحالة' : 'لا يمكن استبعاد أصل بهذه الحالة')
   if (kind === 'sale' && price <= 0) return fail('سعر البيع مطلوب')
@@ -433,7 +448,7 @@ function exitAsset(db: DB, id: string, kind: 'sale' | 'disposal', date: string, 
     )
   }
   const gl = (kind === 'sale' ? price : 0) - p.nbv
-  if (kind === 'sale') journal.push({ account: acc(db, CASH_ACCT), desc: label, debit: price, credit: 0 })
+  if (kind === 'sale') journal.push({ account: acc(db, ac.saleClearingAcct), desc: `${label} — ${SRC?.sourceDocRef ?? ''}`, debit: price, credit: 0 })
   if (p.accum) journal.push({ account: acc(db, ac.accumAcct || ac.assetAcct), desc: label, debit: p.accum, credit: 0 })
   if (gl < 0) journal.push({ account: acc(db, ac.lossAcct), desc: `خسارة ${label}`, debit: -gl, credit: 0 })
   journal.push({ account: acc(db, ac.assetAcct), desc: label, debit: 0, credit: p.gross })
@@ -456,7 +471,8 @@ function exitAsset(db: DB, id: string, kind: 'sale' | 'disposal', date: string, 
   a.state = kind === 'sale' ? 'sold' : 'disposed'
   return null
 }
-export const sell = (db: DB, id: string, date: string, price: number, buyer: string, notes: string) => exitAsset(db, id, 'sale', date, price, buyer, notes)
+/** Called only by the sales-invoice posting listener (§5.6.9). */
+export const sellFromInvoice = (db: DB, id: string, date: string, price: number, buyer: string, notes: string) => exitAsset(db, id, 'sale', date, price, buyer, notes)
 export const dispose = (db: DB, id: string, date: string, notes: string) => exitAsset(db, id, 'disposal', date, 0, '', notes)
 
 /** §4.1 ReverseSale / ReverseDisposal → FromState; reversal dated at the original event; schedule regenerated. */
@@ -464,6 +480,7 @@ export function reverseExit(db: DB, txId: string): string | null {
   const t = db.txs.find((x) => x.id === txId)!
   if (t.isReversed) return fail('الحركة معكوسة أصلاً')
   if (t.type !== 'sale' && t.type !== 'disposal') return fail('هذه الحركة لا تُعكس من هنا')
+  if (t.type === 'sale' && !SRC) return fail('ReverseSale لا يُستدعى يدوياً — يُعكس البيع بإلغاء فاتورة المبيعات (§5.6.9)')
   const a = get(db, t.assetId)
   t.isReversed = true
   db.lines = db.lines.filter((l) => l.txId !== t.id) // the ToDate pair is reversed with the sale
@@ -473,6 +490,49 @@ export function reverseExit(db: DB, txId: string): string | null {
     journal: reversalOf(t.journal), notes: `عكس ${t.number} — مؤرَّخ بتاريخ ${t.type === 'sale' ? 'البيع' : 'الاستبعاد'} الأصلي`,
   })
   if (a.state !== 'closed') generateSchedule(db, a, cls(db, a))
+  renumber(db, a.id)
+  return null
+}
+
+const VALUE_TYPES: TxType[] = ['revaluation', 'impairment', 'addition', 'acquisitionReduction', 'manualDepreciation']
+
+/**
+ * Reverses one transaction written by a transaction document. Reversal never edits the original row: a reversing
+ * row (same type, IsReversal) is added, dated at the original event, and the original is flagged IsReversed.
+ */
+export function reverseTx(db: DB, txId: string): string | null {
+  const t = db.txs.find((x) => x.id === txId)!
+  if (t.isReversed || t.reversedTxId) return fail(`الحركة ${t.number} معكوسة أصلاً`)
+  const a = get(db, t.assetId)
+  if (t.type === 'disposal') return reverseExit(db, t.id)
+  if (t.type === 'costCenterTransfer') return reverseCostCenterTransfer(db, t.id)
+  if (a.state === 'sold' || a.state === 'disposed' || a.state === 'cancelled') return fail(`الأصل ${a.code} ${a.state === 'sold' ? 'مباع' : 'مغلق'} — اعكس الإخراج أولاً`)
+  if (t.type === 'transfer') {
+    const later = db.txs.find((x) => x.assetId === a.id && x.type === 'transfer' && !x.isReversed && !x.reversedTxId && x.id !== t.id && x.date >= t.date && db.txs.indexOf(x) > db.txs.indexOf(t))
+    if (later) return fail(`اعكس النقل اللاحق ${later.number} أولاً`)
+    a.locationId = t.fromLocationId!
+    a.custodianId = t.fromCustodianId!
+  } else if (VALUE_TYPES.includes(t.type)) {
+    const posted = postedLines(db, a.id).find((l) => l.type === 'depreciation' && l.date > t.date)
+    if (posted) return fail(`Assets:ReverseLaterRunsFirst — للأصل ${a.code} قسط مُرحّل بتاريخ ${posted.date} بعد الحركة؛ اعكس دورات الإهلاك اللاحقة أولاً`)
+    const later = db.txs.find((x) => x.assetId === a.id && x.id !== t.id && !x.isReversed && !x.reversedTxId && VALUE_TYPES.includes(x.type) && db.txs.indexOf(x) > db.txs.indexOf(t))
+    if (later) return fail(`اعكس الحركة اللاحقة ${later.number} على ${a.code} أولاً`)
+    const delta = (t.toValue ?? 0) - (t.fromValue ?? 0)
+    if (t.type === 'revaluation' || t.type === 'impairment') a.revaluationAdj -= delta
+    if (t.type === 'addition' || t.type === 'acquisitionReduction') a.originalValue -= delta
+    if (t.type === 'manualDepreciation') db.lines = db.lines.filter((l) => l.txId !== t.id)
+    reopenIfClosed(db, a)
+    regen(db, a)
+    writeAreaSetting(db, a)
+  } else {
+    return fail('هذه الحركة لا تُعكس من هنا')
+  }
+  t.isReversed = true
+  addTx(db, a, t.type, t.date, {
+    number: t.number, amount: -t.amount, fromValue: t.toValue, toValue: t.fromValue,
+    fromLocationId: t.toLocationId, toLocationId: t.fromLocationId, fromCustodianId: t.toCustodianId, toCustodianId: t.fromCustodianId,
+    reversedTxId: t.id, isReversed: true, journal: reversalOf(t.journal), notes: `عكس ${t.number} — بتاريخ الحركة الأصلية`,
+  })
   renumber(db, a.id)
   return null
 }
@@ -642,9 +702,16 @@ export function completeMaint(db: DB, id: string, doneDate: string, cost: number
   m.status = 'done'
   m.doneDate = doneDate
   if (m.capitalize) {
-    const err = addCost(db, m.assetId, doneDate, cost, '', null, `رسملة تكلفة الصيانة ${m.number}`)
+    // Posted as a cost-adjustment document (Addition, 240) — §5.6.2 / §8.
+    const doc = newDoc(db, 'costAdj', doneDate)
+    doc.adjType = 'addition'
+    doc.notes = `رسملة تكلفة الصيانة ${m.number}`
+    doc.lines.push({ ...blankDocLine(), assetId: m.assetId, amount: cost })
+    syncDocNumber(db, doc)
+    db.docs.push(doc)
+    const err = postDoc(db, doc.id, doneDate)
     if (err) return err
-    m.addCostTxId = db.txs[db.txs.length - 1].id
+    m.addCostTxId = doc.txIds[0]
     m.journal = []
   } else {
     m.journal = maintJournal(db, m)
