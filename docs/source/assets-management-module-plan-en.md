@@ -115,6 +115,7 @@ jasim_api/modules/assets/
 | `GainOnDisposalAcctCode` | string(15) | |
 | `LossOnDisposalAcctCode` | string(15) | |
 | `RevaluationSurplusAcctCode` | string(15)? | equity account for an upward revaluation |
+| `AssetSaleClearingAcctCode` | string(15) | intermediate "asset sale clearing" account: the credit side of a sales-invoice line carrying an `AssetId`; zeroed by the retirement entry (§5.6.9). **Not in the seeded chart, see §3.9** |
 | `AssetKind` | enum | `Tangible` / `Intangible` / `Land` / `LowValue` (§5.6.5). `Land` forces `IsDepreciable = false`; `Intangible` is labelled "amortization" in UI and reports but uses the same accounts and engine |
 | `IsDepreciable` | bool | `false` for land |
 | `IsActive` | bool | |
@@ -123,7 +124,7 @@ jasim_api/modules/assets/
 
 ### 3.1.1 `AssetClassAreaAccounts` — account determination per (class × area)
 
-SAP B1 determines accounts per class **and** depreciation area; a single set of account fields on the class (as in Odoo) would force a migration the day a second area appears. So the six account codes of §3.1 (`AssetAcctCode`, `AccumDeprAcctCode`, `DeprExpenseAcctCode`, `GainOnDisposalAcctCode`, `LossOnDisposalAcctCode`, `RevaluationSurplusAcctCode?`) physically live in this table: `ClassId` · `AreaId` · the six codes, `UNIQUE(ClassId, AreaId)`.
+SAP B1 determines accounts per class **and** depreciation area; a single set of account fields on the class (as in Odoo) would force a migration the day a second area appears. So the seven account codes of §3.1 (`AssetAcctCode`, `AccumDeprAcctCode`, `DeprExpenseAcctCode`, `GainOnDisposalAcctCode`, `LossOnDisposalAcctCode`, `RevaluationSurplusAcctCode?`, `AssetSaleClearingAcctCode`) physically live in this table: `ClassId` · `AreaId` · the seven codes, `UNIQUE(ClassId, AreaId)`.
 
 - The class screen edits the **default area's** row, so Phase 1–4 users never see the table.
 - A row is required only for areas with `PostsToGl = true`; the completeness/postability rule of §3.1 applies per row. Non-GL areas need no accounts: their runs mark lines posted without a journal entry (§5.6.8).
@@ -197,7 +198,7 @@ Unique constraint: `UNIQUE(AssetId, DepreciationAreaId, Sequence)`. Operational 
 
 ### 3.7 `AssetTransaction` — event log
 
-`AssetId` · `TransactionType` enum (`Capitalization` / `CapitalizationReversal` / `OpeningBalance` / `Addition` / `AcquisitionReduction` / `ManualDepreciation` / `Revaluation` / `Impairment` / `Transfer` / `CostCenterTransfer` / `Pause` / `Resume` / `Sale` / `SaleReversal` / `Disposal` / `DisposalReversal` / `Adjustment`) · `TransactionDate` · `Amount` · `FromValue` / `ToValue` · `FromLocationId` / `ToLocationId` · `FromCustodianId` / `ToCustodianId` · `FromCostCenterId` / `ToCostCenterId` · `FromProjectId` / `ToProjectId` · `FromState` / `ToState` · `AccumulatedAtEvent` decimal? (accumulated depreciation at a `Sale`/`Disposal`, frozen so the Movement Schedule §7.3 needs no recomputation) · `ReversedTransactionId` Guid? · `IsReversed` bool · `JournalEntryId` Guid? · `PostingPeriodId` · `Notes`.
+`AssetId` · `TransactionType` enum (`Capitalization` / `CapitalizationReversal` / `OpeningBalance` / `Addition` / `AcquisitionReduction` / `ManualDepreciation` / `Revaluation` / `Impairment` / `Transfer` / `CostCenterTransfer` / `Pause` / `Resume` / `Sale` / `SaleReversal` / `Disposal` / `DisposalReversal` / `Adjustment`) · `TransactionDate` · `Amount` · `FromValue` / `ToValue` · `FromLocationId` / `ToLocationId` · `FromCustodianId` / `ToCustodianId` · `FromCostCenterId` / `ToCostCenterId` · `FromProjectId` / `ToProjectId` · `FromState` / `ToState` · `AccumulatedAtEvent` decimal? (accumulated depreciation at a `Sale`/`Disposal`, frozen so the Movement Schedule §7.3 needs no recomputation) · `SourceDocType` / `SourceDocId` / `SourceDocRef` (source document: the sales invoice for `Sale`, the purchase bill or credit note for `Addition`/`AcquisitionReduction`, same convention as §3.5) · `ReversedTransactionId` Guid? · `IsReversed` bool · `JournalEntryId` Guid? · `PostingPeriodId` · `Notes`.
 
 - **`TransactionDate` is the effective date**, not the keying date (keying time is already in the audit columns). It may be back-dated only into an open posting period and never before the last posted depreciation line (§5.5).
 - `FromState` / `ToState` let a reversal restore the exact prior state (§4.1).
@@ -249,6 +250,7 @@ A run's **scope** is `(DepreciationAreaId, AssetClassId?)`, where `AssetClassId 
 | `1190000001..04` | Accum. depr. — buildings / machinery & equipment / vehicles / furniture & office equipment | postable, `BalDirect = Credit` |
 | `4xxxxxxxxx` | Gain on disposal of fixed assets | revenue |
 | `3xxxxxxxxx` | Loss on sale/disposal of fixed assets | expense |
+| `1xxxxxxxxx` | Asset sale clearing (intermediate) | postable asset/liability, zeroed by the retirement entry (§5.6.9) |
 
 > Final numbers are approved by the accountant before the seed is coded — not invented in code (§12, open decision #1).
 
@@ -284,7 +286,7 @@ Each gets a `DocumentNumbering` row (`ModuleName = "Assets"`) and an entry in `_
 | `Revaluation` (upward) | `233` | yes |
 | `Transfer` (location / custodian) | `234` | no — number only, for traceability |
 | `Disposal` / `DisposalReversal` | `235` | yes |
-| `Sale` / `SaleReversal` | `236` | yes |
+| `Sale` / `SaleReversal` | `236` | yes — created **only** by posting a sales invoice that carries an asset line (§5.6.9), never entered manually |
 | `CostCenterTransfer` | `237` | only for the optional year-to-date reclassification (§5.5, §12.6) |
 | `Impairment` (downward revaluation) | `238` | yes |
 | `OpeningBalance` (legacy import batch) | `239` | no — GL opening balances come from the GL's own opening process; this batch is the traceability anchor and the import audit |
@@ -331,8 +333,8 @@ The diagram shows the happy path only; the complete transition set, including ev
 | `Running` | (automatic, last line posted) | `Closed` | `Adjustment` transaction |
 | `Closed` | (automatic, a run reversal un-posts a line) | `Running` | — |
 | `Closed` | `Revaluate` up / `AddCost` / change of estimate | `Running` | only if the resulting remaining depreciable value is `> 0`; regenerates a new schedule |
-| `Running` / `Paused` / `Closed` | `Sell` / `Dispose` | `Sold` / `Disposed` | **first** requires every earlier period to be posted (`Assets:PostDepreciationFirst`), **then** posts depreciation up to the retirement date as a `ToDate` line (§5.6.1), cancels the remaining unposted lines (soft delete), posts the closing entry; records `FromState` and `AccumulatedAtEvent`. Always the whole asset — partial retirement is out of v1 (§5.6.7) |
-| `Sold` / `Disposed` | `ReverseSale` / `ReverseDisposal` | `FromState` of the original transaction | `IsReversal` entry **dated the original sale date**, period open; if the sale is linked to a customer invoice (`SourceDocId`) that invoice must be cancelled first; the restored schedule is regenerated, not undeleted |
+| `Running` / `Paused` / `Closed` | `Sell` (triggered **only** by posting a sales invoice, §5.6.9) / `Dispose` (no-consideration disposal document) | `Sold` / `Disposed` | **first** requires every earlier period to be posted (`Assets:PostDepreciationFirst`), **then** posts depreciation up to the retirement date as a `ToDate` line (§5.6.1), cancels the remaining unposted lines (soft delete), posts the closing entry; records `FromState` and `AccumulatedAtEvent`. Always the whole asset — partial retirement is out of v1 (§5.6.7) |
+| `Sold` / `Disposed` | `ReverseSale` / `ReverseDisposal` | `FromState` of the original transaction | `IsReversal` entry **dated the original sale date**, period open; `ReverseSale` is **never called manually**: cancelling the linked sales invoice (`SourceDocId`) triggers it automatically, and a sale cannot be reversed on its own while the invoice stands (§5.6.9); the restored schedule is regenerated, not undeleted |
 | `Sold` / `Disposed` / `Cancelled` | anything else | — | rejected: terminal |
 
 Backward moves are only possible through an explicit reversal action that leaves both the original and the reversing rows in `AssetTransaction`; no state is ever overwritten silently.
@@ -434,21 +436,29 @@ Every strategy returns a `JournalEntryPostDto` with: `OrganizationId`, `PostingD
 | **Manual depreciation** (doc type `242`, §5.6.4) and **depreciation to date on retirement** (§5.6.1) | `DeprExpenseAcctCode` (+ cost center as of the date) | `AccumDeprAcctCode` |
 | **Upward revaluation** | `AssetAcctCode` | `RevaluationSurplusAcctCode` |
 | **Downward revaluation / impairment** (doc type `238`) | `LossOnDisposalAcctCode` until a dedicated impairment-loss account is approved (§12.1) | `AssetAcctCode` |
-| **Sale at a gain** | cash/receivable + `AccumDeprAcctCode` | `AssetAcctCode` + `GainOnDisposalAcctCode` |
-| **Sale at a loss** | cash/receivable + `AccumDeprAcctCode` + `LossOnDisposalAcctCode` | `AssetAcctCode` |
+| **Asset sale invoice** (the sales invoice's own entry, no change to its strategy) | receivable (customer) | `AssetSaleClearingAcctCode` (the line's revenue account) |
+| **Retirement entry, sale at a gain** (doc type `236`, generated when the invoice is posted) | `AssetSaleClearingAcctCode` (sale amount) + `AccumDeprAcctCode` | `AssetAcctCode` + `GainOnDisposalAcctCode` |
+| **Retirement entry, sale at a loss** (doc type `236`) | `AssetSaleClearingAcctCode` + `AccumDeprAcctCode` + `LossOnDisposalAcctCode` | `AssetAcctCode` |
 | **Disposal with no consideration** | `AccumDeprAcctCode` + `LossOnDisposalAcctCode` | `AssetAcctCode` |
 | **Transfer** (location/custodian only) | — no entry — | — |
 | **Transfer between cost centers / projects** | — no entry by default; future installments simply post to the new center (§5.5) — | — |
 | **Optional year-to-date reclassification** (only if §12.6 says yes; doc type `237`) | `DeprExpenseAcctCode` (new center) | `DeprExpenseAcctCode` (old center) |
 
-Sale and disposal entries use accumulated depreciation **after** the to-date installment of §5.6.1 has been added (that extra Dr expense / Cr accumulated pair belongs to the same entry); the example below assumes it is already included in the 60,000. Sale example (asset 100,000 / accumulated depreciation 60,000 / sold for 50,000 ⇒ 10,000 loss):
+Sale and disposal entries use accumulated depreciation **after** the to-date installment of §5.6.1 has been added (that extra Dr expense / Cr accumulated pair belongs to the same entry); the example below assumes it is already included in the 60,000. Sale example (asset 100,000 / accumulated depreciation 60,000 / sold for 50,000 ⇒ 10,000 loss) — two entries: the sales invoice's, then the retirement entry from Assets:
 
 ```
-Dr  Cash                              50,000
+Sales invoice entry (Sales module):
+Dr  Customer                          50,000
+  Cr  Asset sale clearing                    50,000
+
+Retirement entry (Assets module, doc type 236):
+Dr  Asset sale clearing               50,000
 Dr  Accumulated depreciation — vehicles 60,000
 Dr  Loss on disposal of fixed assets   10,000
   Cr  Vehicles                                100,000
 ```
+
+Together the two entries equal a direct sale (customer 50,000 debit, asset and its accumulated depreciation off the books, 10,000 loss) and the clearing account nets to zero.
 
 ### 5.4 The depreciation-run cycle (`AssetDepreciationRun`)
 
@@ -510,6 +520,15 @@ All are `AssetTransaction` types (§3.7), follow the open-period and reversal ru
 
 **5.6.8 Non-GL areas.** A run for a `PostsToGl = false` area computes and marks lines posted but creates no journal entry and has no `JournalEntryId`; GL reconciliation covers `PostsToGl = true` areas only.
 
+**5.6.9 Selling an asset through the sales invoice (doc type `236`).** There is no direct cash-entry sale from the Assets module (as in SAP B1); retirement without consideration is `Dispose` only.
+
+- **Change to `SaleInvoiceLine`:** add `AssetId` (Guid?, no FK, no reference to the Assets module). **`IsFixedAsset` is not stored on the line**; it is a property of `Item.IsFixedAsset`, read by the UI and the listener from the item, to avoid two values drifting apart. No change to `SaleInvoiceJournalStrategy`.
+- **Path A — from the invoice:** choosing an `IsFixedAsset = true` item shows an "Asset" field on the line (a list of eligible assets only, served by a service in the Assets module that the frontend calls directly, so Sales does not depend on Assets on the backend); quantity is locked to 1 and the price suggested at book value. The line's revenue account is auto-filled with the class's `AssetSaleClearingAcctCode`.
+- **Path B — from the asset:** a "Sell" button on the asset card (action `create-sale-invoice`) creates a `Draft` sales invoice with the asset line prefilled; the user completes customer and price.
+- **On invoice posting:** an event listener in `Assets.Application` reads the `AssetId` lines and: (1) validates the rules below, (2) posts depreciation to the invoice date as a `ToDate` line (§5.6.1), (3) records an `AssetTransaction` of type `Sale` with the invoice as `SourceDoc*`, (4) posts the retirement entry (§5.3) and sets the state to `Sold`.
+- **On invoice cancellation:** `ReverseSale` runs automatically (§4.1).
+- **Guard rules:** reject assets in `Draft`/`Cancelled`/`Sold`/`Disposed`; the same `AssetId` may not appear on two non-cancelled invoices (`Assets:AssetAlreadyInSaleInvoice`); quantity is exactly 1; a fixed-asset item line without `AssetId` is rejected by the posting handler; earlier depreciation periods must be posted (`Assets:PostDepreciationFirst`). Every rejection is a `UserFriendlyException`.
+
 ---
 
 ## 6. Application layer — slices and routes
@@ -547,7 +566,14 @@ Literal reference template: the [`PaymentTerms`](../../../jasim_api/modules/fina
 | `AssetLocationAppService` | `/api/assets/asset-location` · `/tree` |
 | `AssetGroupAppService` | `/api/assets/asset-group` |
 | `DepreciationAreaAppService` | `/api/assets/depreciation-area` |
-| `AssetAppService` | `/api/assets/asset` + actions `capitalize` · `undo-capitalization` · `cancel` · `pause` · `resume` · `revaluate` · `impair` · `add-cost` · `reduce-cost` · `manual-depreciation` · `transfer` · `transfer-cost-center` · `sell` · `reverse-sale` · `dispose` · `reverse-disposal` · `depreciation-schedule` · `recompute-schedule` |
+| `AssetAppService` | `/api/assets/asset` + actions `capitalize` · `undo-capitalization` · `cancel` · `pause` · `resume` · `revaluate` · `impair` · `add-cost` · `reduce-cost` · `manual-depreciation` · `transfer` · `transfer-cost-center` · `create-sale-invoice` (creates a `Draft` sales invoice, §5.6.9) · `dispose` · `reverse-disposal` · `depreciation-schedule` · `recompute-schedule` |
+| `AssetTransactionAppService` | `/api/assets/asset-transaction` (read-only: unified list of all movements, filter by type/asset/date) |
+| `AssetRevaluationAppService` | `/api/assets/asset-revaluation` — one document for `Revaluation` and `Impairment` (direction field up/down) + `post` · `reverse` |
+| `AssetDisposalAppService` | `/api/assets/asset-disposal` + `post` · `reverse` |
+| `AssetCostAdjustmentAppService` | `/api/assets/asset-cost-adjustment` — one document for `Addition` and `AcquisitionReduction` + `post` · `reverse` |
+| `AssetManualDepreciationAppService` | `/api/assets/asset-manual-depreciation` + `post` · `reverse` |
+| `AssetOpeningBalanceAppService` | `/api/assets/asset-opening-balance` — legacy-asset import batch (`239`): `upload` · `preview` · `commit` · `reverse` |
+| `AssetTransferAppService` | `/api/assets/asset-transfer` — location / custodian / cost center / project |
 | `AssetDepreciationRunAppService` | `/api/assets/asset-depreciation-run` + `simulate` · `post` · `reverse` |
 | `AssetReportAppService` | `/api/assets/asset-report/register` · `forecast` · `by-location` · `disposals` · `gl-reconciliation` · `ledger` · `movement-schedule` (each with an `/excel` companion) |
 
@@ -562,9 +588,11 @@ public const string View    = AssetsPermissions.GroupName + ".Asset";   // "Asse
 public const string Create  = View + ".Create";
 public const string Update  = View + ".Update";
 public const string Delete  = View + ".Delete";
-public const string Post    = View + ".Post";       // capitalize / post depreciation / sell / dispose
+public const string Post    = View + ".Post";       // capitalize / post depreciation / dispose (sales are posted by the sales invoice)
 public const string Reverse = View + ".Reverse";
 ```
+
+> Each standalone movement page (`AssetRevaluation`, `AssetDisposal`, `AssetCostAdjustment`, `AssetManualDepreciation`, `AssetTransfer`), `AssetOpeningBalance` (legacy import; `Post` = commit, granted to the assets accountant only) and `AssetTransaction` (read-only, `View` only) gets a permission group of the same shape (`View`/`Create`/`Update`/`Delete`/`Post`/`Reverse`). Capitalize, pause, resume and adjustment are actions on `Asset` under its `Update` and `Post` permissions.
 
 Suggested roles, composed from these permissions in the Roles screen — never hardcoded as fixed roles:
 
@@ -572,7 +600,7 @@ Suggested roles, composed from these permissions in the Roles screen — never h
 |---|---|
 | Asset viewer | `Assets.*` (View only) |
 | Asset user | View + Create/Update on `Asset` while `Draft` |
-| Asset accountant | above + `Post` + `Reverse` on `Asset` and `AssetDepreciationRun` |
+| Asset accountant | above + `Post` + `Reverse` on `Asset`, `AssetDepreciationRun`, every movement page and `AssetOpeningBalance` |
 | Asset settings admin | full `AssetClass` / `AssetLocation` / `AssetGroup` / `DepreciationArea` |
 
 ---
@@ -651,7 +679,7 @@ All seven reports get a `.repx` file registered in `ReportDataSeeder`. Frontend 
 
 ```
 src/modules/assets/{components,services,stores,types,enums}/
-src/pages/assets/{asset-class,asset-location,asset-group,asset,depreciation-run,reports}/
+src/pages/assets/{asset-class,asset-location,asset-group,asset,depreciation-run,asset-revaluation,asset-disposal,asset-cost-adjustment,asset-manual-depreciation,asset-transfer,asset-transaction,asset-opening-balance,reports}/
 src/navigation/modules/assets.ts
 src/locales/assets.json   (+ keys in ar.json / en.json)
 ```
@@ -661,6 +689,15 @@ src/locales/assets.json   (+ keys in ar.json / en.json)
 | Asset classes · locations · groups · depreciation areas | **Type B** (simple CRUD) — `TYPE_B_PAGE_PATTERN.md` |
 | Asset (header + depreciation board + event log) | **Type A** (master-detail) — `TYPE_A_PAGE_PATTERN.md` |
 | Depreciation run (header + lines + simulate/post/reverse buttons) | **Type A** |
+| Revaluation and impairment (one document, "increase / decrease" field) | **Type A** — doc type `233` or `238` by direction |
+| Disposal with no consideration (`235`) | **Type A** |
+| Addition and reduction (`240`/`241`, type field) | **Type A** |
+| Manual depreciation (`242`) | **Type A** |
+| Transfer: location / custodian / cost center / project (`234`/`237`) | simple **Type A** (usually no entry) |
+| Legacy asset import (batch `239`: header + imported lines + row errors; buttons upload Excel / preview / commit / reverse) | **Type A** — the **only** entry point for legacy assets, so no single manual entry (one asset is imported as a one-line batch) |
+| Asset transaction log (all types) | read-only: `BaseGrid` filtered by type, asset and date, plus a matching tab on the asset card |
+| Sale | no standalone entry page: a conditional "Asset" field on the sales-invoice line + a "Sell" button on the asset card that creates a `Draft` invoice (§5.6.9) |
+| Capitalize · Pause · Resume · Adjustment | actions (dialogs) on the asset card; capitalization is also available as a multi-select action on the asset list (for a line of quantity N, §5.6.6) |
 | The seven reports | report page (filters + `BaseGrid` + print) |
 
 Rules enforced from [`jasim_web/CLAUDE.md`](../../../jasim_web/CLAUDE.md): every page inside `XView`, every grid `BaseGrid`, services inherit `CrudService` and define `urls` + `permission`, Pinia stores follow the journal-entry shape (`init` / `saveAsync` / `getListSource` / `service` / `permission`), and visibility is gated through `$can(action, store.permission)`. No bespoke UI components.
@@ -681,7 +718,7 @@ Navigation: an `assets` entry in `src/navigation/modules/assets.ts`, same shape 
 - [ ] Full CRUD slices for `AssetClass` / `AssetLocation` / `AssetGroup`, validating account completeness and postability
 - [ ] `Asset` in `Draft` state only + `AssetCode` generation
 - [ ] Permissions + `ar.json` / `en.json`
-- [ ] Frontend: three Type B pages + the Asset Type A page (no depreciation board yet)
+- [ ] Frontend: three Type B pages + the Asset Type A page (no depreciation board yet) + the read-only transaction log page
 
 **Acceptance:** create a class with valid accounts; a class referencing a non-postable account is rejected with a localized message; create an asset in `Draft` and see it in the list, gated by `ApplyDataAuthority`.
 
@@ -700,15 +737,16 @@ Navigation: an `assets` entry in `src/navigation/modules/assets.ts`, same shape 
 
 ### Phase 3 — Full lifecycle (2–3 weeks)
 
-- [ ] Revaluation (up/down) + regeneration of unposted lines only
-- [ ] Transfer (location / custodian) and effective-dated cost-center / project transfer (§5.5) — no entry by default
+- [ ] Revaluation and impairment as one Type A document (up/down) + regeneration of unposted lines only
+- [ ] Transfer (location / custodian) and effective-dated cost-center / project transfer (§5.5) — no entry by default, on one Type A page
 - [ ] Full state matrix (§4.1): `Cancel`, `UndoCapitalization`, `ReverseSale`, `ReverseDisposal`, `Closed → Running`
 - [ ] `Impair` (doc type `238`)
 - [ ] Depreciation to the retirement date on `Sell`/`Dispose` (§5.6.1)
-- [ ] `AddCost` (`240`), `ReduceCost` (`241`), `ManualDepreciation` (`242`) — §5.6.2–5.6.4
+- [ ] `AddCost` (`240`) and `ReduceCost` (`241`) as one document, and `ManualDepreciation` (`242`) as its own — §5.6.2–5.6.4 — with their pages
+- [ ] Disposal with no consideration as a Type A document; capitalize, pause, resume and adjustment as dialogs on the asset card (capitalize also multi-select)
 - [ ] Asset kinds incl. `LowValue` (§5.6.5)
 - [ ] Pause and resume
-- [ ] Sale (gain/loss) and disposal with no consideration
+- [ ] Sale through the sales invoice (§5.6.9): `AssetId` on `SaleInvoiceLine` + EF migration + DTO, the conditional "Asset" field on the invoice page, a "Sell" button on the asset card creating a `Draft` invoice, the post/cancel listener, the guard rules, and the `AssetSaleClearingAcctCode` account
 - [ ] Complete `AssetTransaction` log tied to journal entry ids
 - [ ] Declining-balance and declining-then-straight methods
 
@@ -717,8 +755,9 @@ Navigation: an `assets` entry in `src/navigation/modules/assets.ts`, same shape 
 ### Phase 4 — Integration and migration (2–3 weeks)
 
 - [ ] **From Procurement:** posting a `PurchaseBill` line for an `IsFixedAsset == true` item creates an `Asset` in `Draft` with `SourceDocType`/`SourceDocId`/`SourceDocRef` set — implemented as an event listener in `Assets.Application`, not a change to the Procurement handler
-- [ ] **To Sales:** link a sale to an existing customer invoice (`SourceDocId`) instead of a direct cash entry
+- [ ] **To Sales:** delivered in Phase 3 (§5.6.9); Phase 4 only covers edge cases (import, cloned invoices, mixed-item invoices) and integration tests
 - [ ] **Legacy asset import** from Excel, following the existing `ConfigurationExcels` pattern in Finance: preview + balance check before commit + `IsLegacy = true` + `ImportedAccumulatedDepreciation` + `ImportCutoffDate` + `RemainingLifeMonthsAtImport`, tracked under one `OpeningBalance` batch (doc type `239`). Row-level errors in the preview: cutoff not a period end; remaining life not a multiple of `monthsPerPeriod`; accumulated > depreciation base; remaining life 0 while book value exceeds salvage; remaining life > 0 while fully depreciated (warning — imported as `Closed`)
+- [ ] **"Legacy asset import" page** (Type A, batch `239`): upload Excel → preview with row errors → commit (creates the assets as `Running`) → reverse. Commit is blocked while any error remains; reversal is blocked once any depreciation line of an asset in the batch is posted. At commit a comparison of the batch's total cost and accumulated depreciation against the GL balances of the same accounts is shown; a difference is a **warning, not a blocking error** (GL opening balances come from Finance's own process and may be entered later), and the reconciliation report (§7) catches any remaining difference. This is the only entry point for legacy assets.
 - [ ] The seven reports (incl. Asset Ledger and Movement Schedule, §7.2–7.3) + `.repx` files + `ReportDataSeeder`
 - [ ] **Purchase-bill lines with quantity N create N asset records** (§5.6.6) — pulled forward from Phase 5
 
@@ -753,7 +792,7 @@ Navigation: an `assets` entry in `src/navigation/modules/assets.ts`, same shape 
 
 9. Running the depreciation run twice for the same period ⇒ only one entry.
 10. Posting in a period with `PeriodStat == 'Y'` ⇒ rejected with a clear message.
-11. Sale at a gain and at a loss ⇒ two correct, balanced entries.
+11. Sale at a gain and at a loss through a sales invoice ⇒ balanced retirement entries and the clearing account nets to zero after both entries. 11a. An invoice carrying the `AssetId` of a `Draft`, sold, or already-invoiced asset ⇒ rejected; a fixed-asset item without `AssetId` ⇒ rejected; cancelling the invoice ⇒ automatic `ReverseSale`.
 12. Reversing a depreciation run ⇒ an `IsReversal` entry + `IsPosted = false` restored.
 13. GL reconciliation after 12 runs.
 14. A user with `DataAuthorityLevel.Org` cannot see another organization's assets.
@@ -808,6 +847,8 @@ Navigation: an `assets` entry in `src/navigation/modules/assets.ts`, same shape 
 ---
 
 ## 12. Open decisions needing sign-off before starting
+
+> **Decisions settled (2026-10-17):** (a) Revaluation and impairment are one document. (b) "Adjustment" is an action on the asset with no document and no entry. (c) Capitalization is an action on the asset (with multi-select), not a standalone page. (d) Sales happen exclusively through the sales invoice with `AssetId` on the line (no `IsFixedAsset` stored on it), created from the invoice or from the asset; no direct cash sale. (e) One page per substantive movement type plus a unified read-only log. Decision 8 below remains open.
 
 1. **Accumulated-depreciation and gain/loss-on-sale account numbers** — the numbers in §3.9 are proposed; the accountant approves them.
 2. **Asset currency** — v1 assumes system currency only. Are there foreign-currency assets that need dual-currency depreciation (`Amount` + `AmountFc`)? The fields already exist on `JournalEntryPostLineDto`, so adding this later needs no data migration.
@@ -918,9 +959,11 @@ Main warehouse land, `IsDepreciable = false`: the schedule is empty from day one
 
 ### A.7 Sale at a loss (repeated from §5.3) and at a gain
 
+The retirement entries below follow the sales invoice's own entry (Dr customer / Cr asset sale clearing for the sale amount); the clearing account appears as a debit here so it nets to zero (§5.6.9).
+
 **Loss** — vehicle (original 100,000,000 / accumulated depreciation 60,000,000 / sold for 50,000,000 ⇒ 10,000,000 loss):
 ```
-Dr  Cash                                   50,000,000
+Dr  Asset sale clearing                    50,000,000
 Dr  Accumulated depreciation — vehicles    60,000,000
 Dr  Loss on disposal of fixed assets       10,000,000
   Cr  Vehicles                                    100,000,000
@@ -928,7 +971,7 @@ Dr  Loss on disposal of fixed assets       10,000,000
 
 **Gain** — old delivery vehicle (original 30,000,000 / accumulated depreciation 28,000,000 / sold for 5,000,000 ⇒ 3,000,000 gain):
 ```
-Dr  Cash                                    5,000,000
+Dr  Asset sale clearing                     5,000,000
 Dr  Accumulated depreciation — vehicles    28,000,000
   Cr  Vehicles                                    30,000,000
   Cr  Gain on disposal of fixed assets              3,000,000

@@ -116,6 +116,7 @@ jasim_api/modules/assets/
 | `GainOnDisposalAcctCode` | string(15) | |
 | `LossOnDisposalAcctCode` | string(15) | |
 | `RevaluationSurplusAcctCode` | string(15)? | حساب حقوق ملكية لفائض إعادة التقييم بالزيادة |
+| `AssetSaleClearingAcctCode` | string(15) | حساب وسيط «تسوية بيع الأصول»: يُرحَّل إليه دائناً سطر فاتورة المبيعات الذي يحمل `AssetId`، ويُصفَّر بقيد الإخراج (§5.6.9). **غير موجود في الدليل المزروع، انظر §3.9** |
 | `AssetKind` | enum | `Tangible` / `Intangible` / `Land` / `LowValue` (§5.6.5). `Land` تفرض `IsDepreciable = false`؛ و`Intangible` تُسمّى «إطفاء» في الواجهة والتقارير لكنها بنفس الحسابات والمحرّك |
 | `IsDepreciable` | bool | `false` للأراضي |
 | `IsActive` | bool | |
@@ -124,7 +125,7 @@ jasim_api/modules/assets/
 
 ### 3.1.1 `AssetClassAreaAccounts` — تحديد الحسابات لكل (فئة × مجال)
 
-SAP B1 يحدّد الحسابات لكل فئة **ولكل** مجال إهلاك؛ ووجود مجموعة حسابات واحدة على الفئة (كما في Odoo) سيفرض هجرة يوم يظهر مجال ثانٍ. لذلك تقيم رموز الحسابات الستة في §3.1 (`AssetAcctCode` و`AccumDeprAcctCode` و`DeprExpenseAcctCode` و`GainOnDisposalAcctCode` و`LossOnDisposalAcctCode` و`RevaluationSurplusAcctCode?`) فعلياً في هذا الجدول: `ClassId` · `AreaId` · الرموز الستة، و`UNIQUE(ClassId, AreaId)`.
+SAP B1 يحدّد الحسابات لكل فئة **ولكل** مجال إهلاك؛ ووجود مجموعة حسابات واحدة على الفئة (كما في Odoo) سيفرض هجرة يوم يظهر مجال ثانٍ. لذلك تقيم رموز الحسابات السبعة في §3.1 (`AssetAcctCode` و`AccumDeprAcctCode` و`DeprExpenseAcctCode` و`GainOnDisposalAcctCode` و`LossOnDisposalAcctCode` و`RevaluationSurplusAcctCode?` و`AssetSaleClearingAcctCode`) فعلياً في هذا الجدول: `ClassId` · `AreaId` · الرموز السبعة، و`UNIQUE(ClassId, AreaId)`.
 
 - شاشة الفئة تحرّر صف **المجال الافتراضي**، فلا يرى مستخدمو المراحل 1–4 الجدول أصلاً.
 - الصف مطلوب فقط للمجالات ذات `PostsToGl = true`؛ وقاعدة الاكتمال وقابلية الترحيل في §3.1 تسري على كل صف. المجالات غير المرحَّلة لا تحتاج حسابات: دوراتها تعلّم الأسطر مُرحَّلة بلا قيد (§5.6.8).
@@ -198,7 +199,7 @@ SAP يحفظ الطريقة والعمر وتاريخ البدء لكل أصل *
 
 ### 3.7 `AssetTransaction` — سجل الأحداث
 
-`AssetId` · `TransactionType` enum (`Capitalization` / `CapitalizationReversal` / `OpeningBalance` / `Addition` / `AcquisitionReduction` / `ManualDepreciation` / `Revaluation` / `Impairment` / `Transfer` / `CostCenterTransfer` / `Pause` / `Resume` / `Sale` / `SaleReversal` / `Disposal` / `DisposalReversal` / `Adjustment`) · `TransactionDate` · `Amount` · `FromValue` / `ToValue` · `FromLocationId` / `ToLocationId` · `FromCustodianId` / `ToCustodianId` · `FromCostCenterId` / `ToCostCenterId` · `FromProjectId` / `ToProjectId` · `FromState` / `ToState` · `AccumulatedAtEvent` decimal? (مجمّع الاندثار عند `Sale`/`Disposal`، مجمَّد ليستغني جدول الحركة §7.3 عن إعادة الحساب) · `ReversedTransactionId` Guid? · `IsReversed` bool · `JournalEntryId` Guid? · `PostingPeriodId` · `Notes`.
+`AssetId` · `TransactionType` enum (`Capitalization` / `CapitalizationReversal` / `OpeningBalance` / `Addition` / `AcquisitionReduction` / `ManualDepreciation` / `Revaluation` / `Impairment` / `Transfer` / `CostCenterTransfer` / `Pause` / `Resume` / `Sale` / `SaleReversal` / `Disposal` / `DisposalReversal` / `Adjustment`) · `TransactionDate` · `Amount` · `FromValue` / `ToValue` · `FromLocationId` / `ToLocationId` · `FromCustodianId` / `ToCustodianId` · `FromCostCenterId` / `ToCostCenterId` · `FromProjectId` / `ToProjectId` · `FromState` / `ToState` · `AccumulatedAtEvent` decimal? (مجمّع الاندثار عند `Sale`/`Disposal`، مجمَّد ليستغني جدول الحركة §7.3 عن إعادة الحساب) · `SourceDocType` / `SourceDocId` / `SourceDocRef` (وثيقة المصدر: فاتورة المبيعات في `Sale`، وفاتورة الشراء أو مذكرة الدائن في `Addition`/`AcquisitionReduction`، بنفس اصطلاح §3.5) · `ReversedTransactionId` Guid? · `IsReversed` bool · `JournalEntryId` Guid? · `PostingPeriodId` · `Notes`.
 
 - **`TransactionDate` هو التاريخ الفعلي** للحدث لا تاريخ الإدخال (وقت الإدخال موجود أصلاً في أعمدة التدقيق). يجوز تأريخه بأثر رجعي داخل فترة محاسبية مفتوحة فقط، وليس قبل آخر سطر إهلاك مُرحَّل (§5.5).
 - `FromState` / `ToState` يتيحان للعكس استعادة الحالة السابقة بدقة (§4.1).
@@ -250,6 +251,7 @@ SAP يحفظ الطريقة والعمر وتاريخ البدء لكل أصل *
 | `1190000001..04` | مجمّع اندثار مباني / آلات ومعدات / وسائط نقل / أثاث وأجهزة مكتب | قابلة للترحيل، `BalDirect = Credit` |
 | `4xxxxxxxxx` | أرباح بيع موجودات ثابتة | إيراد |
 | `3xxxxxxxxx` | خسائر بيع واستبعاد موجودات ثابتة | مصروف |
+| `1xxxxxxxxx` | تسوية بيع الأصول (وسيط) | أصل/التزام قابل للترحيل، يُصفَّر بقيد الإخراج (§5.6.9) |
 
 > الأرقام النهائية يعتمدها المحاسب قبل كتابة الـ Seed — لا تُخترع في الكود (§12، القرار المفتوح رقم 1).
 
@@ -285,7 +287,7 @@ public static readonly DocumentType AssetManualDepreciation = new("Asset Manual 
 | `Revaluation` (بالزيادة) | `233` | نعم |
 | `Transfer` (موقع / عهدة) | `234` | لا — رقم فقط للتتبّع |
 | `Disposal` / `DisposalReversal` | `235` | نعم |
-| `Sale` / `SaleReversal` | `236` | نعم |
+| `Sale` / `SaleReversal` | `236` | نعم — يُنشأ **حصراً** بترحيل فاتورة مبيعات تحمل سطر أصل (§5.6.9)، ولا يُدخَل يدوياً |
 | `CostCenterTransfer` | `237` | فقط لإعادة التصنيف الاختيارية لمصروف السنة حتى تاريخه (§5.5، §12.6) |
 | `Impairment` (إعادة تقييم بالنقص) | `238` | نعم |
 | `OpeningBalance` (دفعة استيراد الأصول القديمة) | `239` | لا — الأرصدة الافتتاحية للأستاذ تأتي من عمليتها الخاصة؛ هذه الدفعة مرساة التتبّع وسجل تدقيق الاستيراد |
@@ -332,8 +334,8 @@ public static readonly DocumentType AssetManualDepreciation = new("Asset Manual 
 | `Running` | (تلقائي، ترحيل آخر سطر) | `Closed` | حركة `Adjustment` |
 | `Closed` | (تلقائي، عكس دورة يُلغي ترحيل سطر) | `Running` | — |
 | `Closed` | `Revaluate` بالزيادة / `AddCost` / تغيير تقدير | `Running` | فقط إذا بقيت قيمة قابلة للإهلاك `> 0`؛ يولّد جدولاً جديداً |
-| `Running` / `Paused` / `Closed` | `Sell` / `Dispose` | `Sold` / `Disposed` | **أولاً** يشترط ترحيل كل الفترات السابقة (`Assets:PostDepreciationFirst`)، **ثم** يرحّل الإهلاك حتى تاريخ الإخراج كسطر `ToDate` (§5.6.1)، ويلغي بقية الأسطر غير المُرحّلة (حذف ناعم)، ويرحّل قيد الإغلاق؛ يسجّل `FromState` و`AccumulatedAtEvent`. دائماً للأصل كاملاً — الاستبعاد الجزئي خارج v1 (§5.6.7) |
-| `Sold` / `Disposed` | `ReverseSale` / `ReverseDisposal` | `FromState` للحركة الأصلية | قيد `IsReversal` **بتاريخ البيع الأصلي**، فترة مفتوحة؛ وإن كان البيع مرتبطاً بفاتورة عميل (`SourceDocId`) فيجب إلغاء الفاتورة أولاً؛ الجدول المُستعاد يُعاد توليده لا يُسترجع من المحذوفات |
+| `Running` / `Paused` / `Closed` | `Sell` (يُطلَق **فقط** بترحيل فاتورة مبيعات، §5.6.9) / `Dispose` (وثيقة استبعاد بلا مقابل) | `Sold` / `Disposed` | **أولاً** يشترط ترحيل كل الفترات السابقة (`Assets:PostDepreciationFirst`)، **ثم** يرحّل الإهلاك حتى تاريخ الإخراج كسطر `ToDate` (§5.6.1)، ويلغي بقية الأسطر غير المُرحّلة (حذف ناعم)، ويرحّل قيد الإغلاق؛ يسجّل `FromState` و`AccumulatedAtEvent`. دائماً للأصل كاملاً — الاستبعاد الجزئي خارج v1 (§5.6.7) |
+| `Sold` / `Disposed` | `ReverseSale` / `ReverseDisposal` | `FromState` للحركة الأصلية | قيد `IsReversal` **بتاريخ البيع الأصلي**، فترة مفتوحة؛ و`ReverseSale` **لا يُستدعى يدوياً**: يُشغَّل تلقائياً بإلغاء فاتورة المبيعات المرتبطة (`SourceDocId`)، ولا يجوز عكس البيع منفرداً والفاتورة قائمة (§5.6.9)؛ الجدول المُستعاد يُعاد توليده لا يُسترجع من المحذوفات |
 | `Sold` / `Disposed` / `Cancelled` | أي إجراء آخر | — | مرفوض: حالة نهائية |
 
 الحركات الرجعية ممكنة فقط عبر إجراء عكس صريح يُبقي الصف الأصلي والصف العاكس معاً في `AssetTransaction`؛ لا تُكتب فوق أي حالة بصمت.
@@ -435,21 +437,29 @@ JournalPostingStrategyFactory.RegisterStrategy<AssetDepreciationRun>(
 | **إهلاك يدوي** (نوع الوثيقة `242`، §5.6.4) و**إهلاك حتى تاريخ الإخراج** (§5.6.1) | `DeprExpenseAcctCode` (+ مركز الكلفة كما في التاريخ) | `AccumDeprAcctCode` |
 | **إعادة تقييم بالزيادة** | `AssetAcctCode` | `RevaluationSurplusAcctCode` |
 | **إعادة تقييم بالنقص / هبوط قيمة** (نوع الوثيقة `238`) | `LossOnDisposalAcctCode` إلى حين اعتماد حساب خسارة هبوط قيمة مخصّص (§12.1) | `AssetAcctCode` |
-| **البيع بربح** | النقد/المدينون + `AccumDeprAcctCode` | `AssetAcctCode` + `GainOnDisposalAcctCode` |
-| **البيع بخسارة** | النقد/المدينون + `AccumDeprAcctCode` + `LossOnDisposalAcctCode` | `AssetAcctCode` |
+| **فاتورة بيع الأصل** (قيد فاتورة المبيعات نفسها، بلا تعديل على استراتيجيتها) | المدينون (العميل) | `AssetSaleClearingAcctCode` (حساب إيراد السطر) |
+| **قيد إخراج البيع بربح** (نوع `236`، يُولَّد بترحيل الفاتورة) | `AssetSaleClearingAcctCode` (مبلغ البيع) + `AccumDeprAcctCode` | `AssetAcctCode` + `GainOnDisposalAcctCode` |
+| **قيد إخراج البيع بخسارة** (نوع `236`) | `AssetSaleClearingAcctCode` + `AccumDeprAcctCode` + `LossOnDisposalAcctCode` | `AssetAcctCode` |
 | **الاستبعاد بلا مقابل** | `AccumDeprAcctCode` + `LossOnDisposalAcctCode` | `AssetAcctCode` |
 | **النقل** (موقع / عهدة فقط) | — لا قيد — | — |
 | **النقل بين مراكز كلفة / مشاريع** | — لا قيد افتراضياً؛ الأقساط المستقبلية تُرحَّل ببساطة إلى المركز الجديد (§5.5) — | — |
 | **إعادة التصنيف الاختيارية لمصروف السنة حتى تاريخه** (فقط إذا أجاب §12.6 بنعم؛ نوع الوثيقة `237`) | `DeprExpenseAcctCode` (المركز الجديد) | `DeprExpenseAcctCode` (المركز القديم) |
 
-قيود البيع والاستبعاد تستخدم مجمّع الاندثار **بعد** إضافة قسط «حتى التاريخ» في §5.6.1 (زوج مدين مصروف / دائن مجمّع الإضافي يقع في نفس القيد)؛ والمثال التالي يفترض أنه مشمول أصلاً في الـ 60,000. مثال البيع (أصل 100,000 / مجمّع اندثار 60,000 / بيع 50,000 ⇒ خسارة 10,000):
+قيود البيع والاستبعاد تستخدم مجمّع الاندثار **بعد** إضافة قسط «حتى التاريخ» في §5.6.1 (زوج مدين مصروف / دائن مجمّع الإضافي يقع في نفس القيد)؛ والمثال التالي يفترض أنه مشمول أصلاً في الـ 60,000. مثال البيع (أصل 100,000 / مجمّع اندثار 60,000 / بيع 50,000 ⇒ خسارة 10,000) — قيدان: قيد فاتورة المبيعات، ثم قيد الإخراج من الأصول:
 
 ```
-مدين  النقد                          50,000
+قيد فاتورة المبيعات (وحدة المبيعات):
+مدين  العميل                         50,000
+  دائن  تسوية بيع الأصول                    50,000
+
+قيد الإخراج (وحدة الأصول، نوع 236):
+مدين  تسوية بيع الأصول               50,000
 مدين  مجمّع اندثار وسائط نقل         60,000
 مدين  خسائر بيع موجودات ثابتة        10,000
   دائن  وسائط نقل                          100,000
 ```
+
+أثر القيدين معاً مطابق للبيع المباشر (العميل 50,000 مدين، الأصل ومجمّعه خارج الدفاتر، خسارة 10,000)، ويُصفَّر حساب التسوية.
 
 ### 5.4 دورة الإهلاك (`AssetDepreciationRun`)
 
@@ -511,6 +521,15 @@ JournalPostingStrategyFactory.RegisterStrategy<AssetDepreciationRun>(
 
 **5.6.8 المجالات غير المرحَّلة للأستاذ.** دورة لمجال `PostsToGl = false` تحسب وتعلّم الأسطر مُرحَّلة لكن لا تنشئ قيد يومية ولا `JournalEntryId`؛ ومطابقة الأستاذ تغطي المجالات `PostsToGl = true` فقط.
 
+**5.6.9 بيع الأصل عبر فاتورة المبيعات (نوع الوثيقة `236`).** لا يوجد بيع بقيد نقدي مباشر من وحدة الأصول (كما في SAP B1)؛ والإخراج بلا مقابل هو `Dispose` فقط.
+
+- **تعديل `SaleInvoiceLine`:** إضافة `AssetId` (Guid?، بلا FK ولا مرجع إلى وحدة الأصول). **لا يُخزَّن `IsFixedAsset` في السطر**؛ هو خاصية `Item.IsFixedAsset` وتقرؤه الواجهة والمستمع من المادة، تفادياً لتعارض قيمتين. لا تعديل على `SaleInvoiceJournalStrategy`.
+- **مسار أ — من الفاتورة:** عند اختيار مادة `IsFixedAsset = true` يظهر في السطر حقل «الأصل» (قائمة بالأصول المؤهلة فقط من خدمة في وحدة الأصول تستدعيها الواجهة مباشرة، فلا تعتمد المبيعات خلفياً على الأصول)، وتُقفل الكمية على 1 ويُقترح السعر بالقيمة الدفترية. وحساب إيراد السطر يُملأ آلياً بـ `AssetSaleClearingAcctCode` للفئة.
+- **مسار ب — من الأصل:** زر «بيع» على بطاقة الأصل (إجراء `create-sale-invoice`) ينشئ فاتورة مبيعات `Draft` بسطر الأصل جاهزاً ويفتحها المستخدم لإكمال العميل والسعر.
+- **عند ترحيل الفاتورة:** مستمع حدث في `Assets.Application` يقرأ أسطر `AssetId` ثم: (1) يتحقق من القواعد أدناه، (2) يرحّل الإهلاك حتى تاريخ الفاتورة كسطر `ToDate` (§5.6.1)، (3) يسجّل `AssetTransaction` من نوع `Sale` بـ `SourceDoc*` للفاتورة، (4) يرحّل قيد الإخراج (§5.3) ويضع الحالة `Sold`.
+- **عند إلغاء الفاتورة:** يُنفَّذ `ReverseSale` تلقائياً (§4.1).
+- **قواعد الحماية:** يُرفض الأصل في `Draft`/`Cancelled`/`Sold`/`Disposed`؛ ولا يتكرر `AssetId` في فاتورتين غير ملغيتين (`Assets:AssetAlreadyInSaleInvoice`)؛ والكمية 1 حصراً؛ وسطر مادة أصل ثابت بلا `AssetId` يرفضه معالج الترحيل؛ ويُشترط ترحيل فترات الإهلاك السابقة (`Assets:PostDepreciationFirst`). كل رفض بـ `UserFriendlyException`.
+
 ---
 
 ## 6. طبقة التطبيق — الشرائح والمسارات
@@ -548,7 +567,14 @@ Assets.Application/Api/<Feature>/
 | `AssetLocationAppService` | `/api/assets/asset-location` · `/tree` |
 | `AssetGroupAppService` | `/api/assets/asset-group` |
 | `DepreciationAreaAppService` | `/api/assets/depreciation-area` |
-| `AssetAppService` | `/api/assets/asset` + الأفعال `capitalize` · `undo-capitalization` · `cancel` · `pause` · `resume` · `revaluate` · `impair` · `add-cost` · `reduce-cost` · `manual-depreciation` · `transfer` · `transfer-cost-center` · `sell` · `reverse-sale` · `dispose` · `reverse-disposal` · `depreciation-schedule` · `recompute-schedule` |
+| `AssetAppService` | `/api/assets/asset` + الأفعال `capitalize` · `undo-capitalization` · `cancel` · `pause` · `resume` · `revaluate` · `impair` · `add-cost` · `reduce-cost` · `manual-depreciation` · `transfer` · `transfer-cost-center` · `create-sale-invoice` (ينشئ فاتورة مبيعات `Draft`، §5.6.9) · `dispose` · `reverse-disposal` · `depreciation-schedule` · `recompute-schedule` |
+| `AssetTransactionAppService` | `/api/assets/asset-transaction` (قراءة فقط: قائمة موحدة بكل الحركات مع تصفية بالنوع والأصل والتاريخ) + صفحات الحركات المستقلة أدناه |
+| `AssetRevaluationAppService` | `/api/assets/asset-revaluation` — وثيقة واحدة لـ `Revaluation` و`Impairment` (حقل الاتجاه زيادة/نقص) + `post` · `reverse` |
+| `AssetDisposalAppService` | `/api/assets/asset-disposal` + `post` · `reverse` |
+| `AssetCostAdjustmentAppService` | `/api/assets/asset-cost-adjustment` — وثيقة واحدة لـ `Addition` و`AcquisitionReduction` + `post` · `reverse` |
+| `AssetManualDepreciationAppService` | `/api/assets/asset-manual-depreciation` + `post` · `reverse` |
+| `AssetOpeningBalanceAppService` | `/api/assets/asset-opening-balance` — دفعة استيراد الأصول القديمة (`239`): `upload` · `preview` · `commit` · `reverse` |
+| `AssetTransferAppService` | `/api/assets/asset-transfer` — موقع / عهدة / مركز كلفة / مشروع |
 | `AssetDepreciationRunAppService` | `/api/assets/asset-depreciation-run` + `simulate` · `post` · `reverse` |
 | `AssetReportAppService` | `/api/assets/asset-report/register` · `forecast` · `by-location` · `disposals` · `gl-reconciliation` · `ledger` · `movement-schedule` (ولكل منها مسار `/excel` مرافق) |
 
@@ -563,9 +589,11 @@ public const string View    = AssetsPermissions.GroupName + ".Asset";   // "Asse
 public const string Create  = View + ".Create";
 public const string Update  = View + ".Update";
 public const string Delete  = View + ".Delete";
-public const string Post    = View + ".Post";       // رسملة / ترحيل إهلاك / بيع / استبعاد
+public const string Post    = View + ".Post";       // رسملة / ترحيل إهلاك / استبعاد (البيع يُرحَّل بفاتورة المبيعات)
 public const string Reverse = View + ".Reverse";
 ```
+
+> لكل صفحة حركة مستقلة (`AssetRevaluation` و`AssetDisposal` و`AssetCostAdjustment` و`AssetManualDepreciation` و`AssetTransfer`) و`AssetOpeningBalance` (استيراد الأصول القديمة، وتُمنح `Post` فيه لمحاسب الأصول فقط) و`AssetTransaction` (قراءة فقط، `View` فقط) مجموعة صلاحيات بنفس النمط (`View`/`Create`/`Update`/`Delete`/`Post`/`Reverse`). الرسملة والإيقاف والاستئناف والتسوية إجراءات على `Asset` وتحت صلاحيتي `Update` و`Post` فيه.
 
 الأدوار المقترحة تُركَّب من هذه الصلاحيات في شاشة الأدوار — لا تُبرمج كأدوار ثابتة:
 
@@ -573,7 +601,7 @@ public const string Reverse = View + ".Reverse";
 |---|---|
 | مُطّلع على الأصول | `Assets.*` (View) فقط |
 | مستخدم الأصول | View + Create/Update على `Asset` في `Draft` |
-| محاسب الأصول | ما سبق + `Post` + `Reverse` على `Asset` و`AssetDepreciationRun` |
+| محاسب الأصول | ما سبق + `Post` + `Reverse` على `Asset` و`AssetDepreciationRun` وعلى كل صفحات الحركات و`AssetOpeningBalance` |
 | مدير إعدادات الأصول | `AssetClass` / `AssetLocation` / `AssetGroup` / `DepreciationArea` بالكامل |
 
 ---
@@ -652,7 +680,7 @@ Assets.Application/Api/Reports/<ReportName>/
 
 ```
 src/modules/assets/{components,services,stores,types,enums}/
-src/pages/assets/{asset-class,asset-location,asset-group,asset,depreciation-run,reports}/
+src/pages/assets/{asset-class,asset-location,asset-group,asset,depreciation-run,asset-revaluation,asset-disposal,asset-cost-adjustment,asset-manual-depreciation,asset-transfer,asset-transaction,asset-opening-balance,reports}/
 src/navigation/modules/assets.ts
 src/locales/assets.json   (+ مفاتيح في ar.json / en.json)
 ```
@@ -662,6 +690,15 @@ src/locales/assets.json   (+ مفاتيح في ar.json / en.json)
 | فئات الأصول · المواقع · المجموعات · مجالات الإهلاك | **Type B** (CRUD بسيط) — `TYPE_B_PAGE_PATTERN.md` |
 | الأصل (رأس + جدول الإهلاك + سجل الأحداث) | **Type A** (master-detail) — `TYPE_A_PAGE_PATTERN.md` |
 | دورة الإهلاك (رأس + أسطر + أزرار محاكاة/ترحيل/عكس) | **Type A** |
+| إعادة التقييم والهبوط (وثيقة واحدة، حقل «زيادة / نقص») | **Type A** — نوع الوثيقة `233` أو `238` حسب الاتجاه |
+| الاستبعاد بلا مقابل (`235`) | **Type A** |
+| الإضافة والتخفيض (`240`/`241`، حقل النوع) | **Type A** |
+| الإهلاك اليدوي (`242`) | **Type A** |
+| النقل: موقع / عهدة / مركز كلفة / مشروع (`234`/`237`) | **Type A** بسيطة (بلا قيد غالباً) |
+| استيراد الأصول القديمة (دفعة `239`: رأس + أسطر مستوردة + أخطاء الصف؛ أزرار رفع Excel / معاينة / اعتماد / عكس) | **Type A** — المدخل **الوحيد** للأصول القديمة، فلا إدخال يدوي فردي لها (يُستورد الأصل الواحد كدفعة من سطر) |
+| سجل حركات الأصول (كل الأنواع) | قراءة فقط: `BaseGrid` بتصفية النوع والأصل والتاريخ، وتبويب مماثل في بطاقة الأصل |
+| البيع | لا صفحة إدخال مستقلة: حقل «الأصل» الشرطي في سطر فاتورة المبيعات + زر «بيع» على بطاقة الأصل ينشئ فاتورة `Draft` (§5.6.9) |
+| الرسملة · الإيقاف · الاستئناف · التسوية | إجراءات (حوارات) على بطاقة الأصل؛ والرسملة متاحة أيضاً بتحديد متعدد من قائمة الأصول (لسطر كميته N، §5.6.6) |
 | التقارير السبعة | صفحة تقرير (فلاتر + `BaseGrid` + طباعة) |
 
 قواعد ملزِمة من [`jasim_web/CLAUDE.md`](../../../jasim_web/CLAUDE.md): كل صفحة داخل `XView`، كل شبكة `BaseGrid`، الخدمة ترث `CrudService` وتعرّف `urls` + `permission`، المتجر Pinia بنمط journal-entry (`init` / `saveAsync` / `getListSource` / `service` / `permission`)، والتحكم بالعرض عبر `$can(action, store.permission)`. لا مكوّنات UI مخصّصة.
@@ -682,7 +719,7 @@ src/locales/assets.json   (+ مفاتيح في ar.json / en.json)
 - [ ] شرائح CRUD كاملة لـ `AssetClass` / `AssetLocation` / `AssetGroup` مع التحقق من اكتمال الحسابات وقابليتها للترحيل
 - [ ] `Asset` في حالة `Draft` فقط + توليد `AssetCode`
 - [ ] الصلاحيات + `ar.json` / `en.json`
-- [ ] الواجهة: ثلاث صفحات Type B + صفحة الأصل Type A (بلا جدول إهلاك بعد)
+- [ ] الواجهة: ثلاث صفحات Type B + صفحة الأصل Type A (بلا جدول إهلاك بعد) + صفحة سجل الحركات (قراءة فقط)
 
 **معيار القبول:** إنشاء فئة بحسابات صحيحة، ورفض فئة بحساب غير قابل للترحيل برسالة مُعرّبة؛ إنشاء أصل في `Draft` وعرضه في القائمة محكوماً بـ `ApplyDataAuthority`.
 
@@ -701,15 +738,16 @@ src/locales/assets.json   (+ مفاتيح في ar.json / en.json)
 
 ### المرحلة 3 — دورة الحياة الكاملة (2–3 أسابيع)
 
-- [ ] إعادة التقييم (زيادة/نقص) + إعادة توليد غير المُرحّل فقط
-- [ ] النقل (موقع / عهدة) ونقل مركز الكلفة / المشروع بتاريخ سريان (§5.5) — بلا قيد افتراضياً
+- [ ] إعادة التقييم والهبوط كوثيقة Type A واحدة (زيادة/نقص) + إعادة توليد غير المُرحّل فقط
+- [ ] النقل (موقع / عهدة) ونقل مركز الكلفة / المشروع بتاريخ سريان (§5.5) — بلا قيد افتراضياً، بصفحة Type A واحدة
 - [ ] مصفوفة الحالات الكاملة (§4.1): `Cancel` و`UndoCapitalization` و`ReverseSale` و`ReverseDisposal` و`Closed → Running`
 - [ ] `Impair` (نوع الوثيقة `238`)
 - [ ] الإهلاك حتى تاريخ الإخراج عند `Sell`/`Dispose` (§5.6.1)
-- [ ] `AddCost` (`240`) و`ReduceCost` (`241`) و`ManualDepreciation` (`242`) — §5.6.2–5.6.4
+- [ ] `AddCost` (`240`) و`ReduceCost` (`241`) كوثيقة واحدة، و`ManualDepreciation` (`242`) بوثيقتها — §5.6.2–5.6.4 — مع صفحاتها
+- [ ] الاستبعاد بلا مقابل كوثيقة Type A؛ والرسملة والإيقاف والاستئناف والتسوية حوارات على بطاقة الأصل (الرسملة بتحديد متعدد أيضاً)
 - [ ] أنواع الأصول بما فيها `LowValue` (§5.6.5)
 - [ ] الإيقاف والاستئناف
-- [ ] البيع (ربح/خسارة) والاستبعاد بلا مقابل
+- [ ] البيع عبر فاتورة المبيعات (§5.6.9): حقل `AssetId` في `SaleInvoiceLine` + هجرة EF + DTO، وحقل «الأصل» الشرطي في صفحة الفاتورة، وزر «بيع» على بطاقة الأصل ينشئ فاتورة `Draft`، ومستمع الترحيل/الإلغاء، وقواعد الحماية، وحساب `AssetSaleClearingAcctCode`
 - [ ] سجل `AssetTransaction` كامل مربوطاً بمعرّفات القيود
 - [ ] القسط المتناقص والمختلط
 
@@ -718,8 +756,9 @@ src/locales/assets.json   (+ مفاتيح في ar.json / en.json)
 ### المرحلة 4 — التكامل والاستيراد (2–3 أسابيع)
 
 - [ ] **من المشتريات:** عند ترحيل `PurchaseBill` يحمل سطراً لصنف `IsFixedAsset == true` ⇒ إنشاء `Asset` في `Draft` مع `SourceDocType`/`SourceDocId`/`SourceDocRef` — يُنفَّذ كمستمع حدث في `Assets.Application` لا بتعديل معالج المشتريات
-- [ ] **إلى المبيعات:** ربط البيع بفاتورة عميل قائمة (`SourceDocId`) بدل قيد نقدي مباشر
+- [ ] **إلى المبيعات:** يُسلَّم في المرحلة 3 (§5.6.9)؛ المرحلة 4 تكتفي بحالات الحافة (استيراد، فواتير نسخ، فواتير بأصناف مختلطة) واختبارات التكامل
 - [ ] **استيراد الأصول القائمة (Legacy)** من Excel بنمط `ConfigurationExcels` القائم في Finance: معاينة + تحقق توازن قبل الاعتماد + `IsLegacy = true` + `ImportedAccumulatedDepreciation` + `ImportCutoffDate` + `RemainingLifeMonthsAtImport`، كلها تحت دفعة `OpeningBalance` واحدة (نوع الوثيقة `239`). أخطاء مستوى الصف في المعاينة: تاريخ القطع ليس نهاية فترة؛ العمر المتبقي ليس من مضاعفات `monthsPerPeriod`؛ المجمّع أكبر من قاعدة الإهلاك؛ العمر المتبقي 0 بينما القيمة الدفترية أعلى من التخريدية؛ عمر متبقٍّ > 0 بينما الأصل مُهلَك بالكامل (تحذير — يُستورد `Closed`)
+- [ ] **صفحة «استيراد الأصول القديمة»** (Type A، دفعة `239`): رفع Excel ← معاينة بأخطاء الصف ← اعتماد (ينشئ الأصول `Running`) ← عكس. الاعتماد ممنوع مع أي خطأ؛ والعكس ممنوع بعد ترحيل أي سطر إهلاك لأصل في الدفعة. عند الاعتماد تُعرض مقارنة إجمالي التكلفة والمجمّع في الدفعة بأرصدة الأستاذ للحسابات نفسها، والفرق **تحذير لا خطأ مانع** (أرصدة الأستاذ تُدخل من عملية Finance الخاصة وقد تتأخر)، ويلتقطه تقرير المطابقة (§7). هذا هو المدخل الوحيد للأصول القديمة.
 - [ ] التقارير السبعة (بما فيها بطاقة الأصل وجدول الحركة، §7.2–7.3) + ملفات `.repx` + `ReportDataSeeder`
 - [ ] **سطر فاتورة مشتريات بكمية N ينشئ N سجل أصل** (§5.6.6) — مسحوب من المرحلة 5
 
@@ -754,7 +793,7 @@ src/locales/assets.json   (+ مفاتيح في ar.json / en.json)
 
 9. تشغيل دورة الإهلاك مرتين لنفس الفترة ⇒ قيد واحد فقط.
 10. ترحيل في فترة `PeriodStat == 'Y'` ⇒ رفض برسالة واضحة.
-11. البيع بربح وبخسارة ⇒ قيدان صحيحان متوازنان.
+11. البيع بربح وبخسارة عبر فاتورة المبيعات ⇒ قيدا الإخراج متوازنان وحساب التسوية يُصفَّر بعد القيدين. 11أ. فاتورة تحمل `AssetId` لأصل `Draft` أو مباع أو مرتبط بفاتورة أخرى ⇒ مرفوضة؛ مادة أصل ثابت بلا `AssetId` ⇒ مرفوضة؛ إلغاء الفاتورة ⇒ `ReverseSale` تلقائي.
 12. عكس دورة إهلاك ⇒ قيد `IsReversal` + عودة `IsPosted = false`.
 13. مطابقة GL بعد 12 دورة.
 14. مستخدم بـ `DataAuthorityLevel.Org` لا يرى أصول منظمة أخرى.
@@ -809,6 +848,8 @@ src/locales/assets.json   (+ مفاتيح في ar.json / en.json)
 ---
 
 ## 12. قرارات مفتوحة تحتاج تأكيداً قبل البدء
+
+> **قرارات حُسمت (2026-10-17):** (أ) إعادة التقييم والهبوط وثيقة واحدة. (ب) «التسوية» إجراء على الأصل بلا وثيقة ولا قيد. (ج) الرسملة إجراء على الأصل (مع تحديد متعدد) لا صفحة مستقلة. (د) البيع حصراً عبر فاتورة المبيعات بـ `AssetId` على السطر (بلا تخزين `IsFixedAsset` فيه) ويُنشأ من الفاتورة أو من الأصل؛ ولا بيع نقدي مباشر. (هـ) صفحة لكل نوع حركة جوهري + سجل موحد للقراءة. القرار 8 أدناه يبقى مفتوحاً.
 
 1. **أرقام حسابات مجمّع الاندثار وأرباح/خسائر البيع** — الأرقام في §3.9 مقترحة ويعتمدها المحاسب.
 2. **عملة الأصل** — v1 يفترض عملة النظام فقط. هل هناك أصول بعملة أجنبية تستوجب إهلاكاً بعملتين (`Amount` + `AmountFc`)؟ الحقول موجودة أصلاً في `JournalEntryPostLineDto`، فالإضافة لاحقاً لا تتطلب هجرة بيانات.
@@ -919,9 +960,11 @@ src/locales/assets.json   (+ مفاتيح في ar.json / en.json)
 
 ### أ.7 البيع بخسارة (مكرَّر من §5.3) وبربح
 
+قيدا الإخراج أدناه يأتيان بعد قيد فاتورة المبيعات (مدين العميل / دائن تسوية بيع الأصول بمبلغ البيع)، وحساب التسوية يظهر مديناً فيهما ليُصفَّر (§5.6.9).
+
 **بخسارة** — سيارة (أصل 100,000,000 / مجمّع اندثار 60,000,000 / بيعت بـ 50,000,000 ⇒ خسارة 10,000,000):
 ```
-مدين  النقد                              50,000,000
+مدين  تسوية بيع الأصول                    50,000,000
 مدين  مجمّع اندثار وسائط نقل             60,000,000
 مدين  خسائر بيع موجودات ثابتة            10,000,000
   دائن  وسائط نقل                               100,000,000
@@ -929,7 +972,7 @@ src/locales/assets.json   (+ مفاتيح في ar.json / en.json)
 
 **بربح** — سيارة توصيل قديمة (أصل 30,000,000 / مجمّع اندثار 28,000,000 / بيعت بـ 5,000,000 ⇒ ربح 3,000,000):
 ```
-مدين  النقد                               5,000,000
+مدين  تسوية بيع الأصول                     5,000,000
 مدين  مجمّع اندثار وسائط نقل              28,000,000
   دائن  وسائط نقل                                30,000,000
   دائن  أرباح بيع موجودات ثابتة                    3,000,000
