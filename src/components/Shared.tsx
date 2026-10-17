@@ -1,10 +1,9 @@
-import { useState } from 'react'
-import { Badge, Confirm, Empty, Modal } from './ui'
+import { Link } from 'react-router-dom'
+import { Badge, Empty, Modal } from './ui'
 import { money, txLabel, txTone } from '../data/format'
-import { reverseCostCenterTransfer, reverseExit } from '../data/lifecycle'
 import { useLookups } from '../data/lookups'
 import { useStore } from '../data/store'
-import type { AssetTx, JournalLine } from '../data/types'
+import type { AssetTx, DB, JournalLine } from '../data/types'
 
 export function JournalTable({ lines, note, date }: { lines: JournalLine[]; note?: string; date?: string }) {
   if (!lines.length) return <Empty text={note ?? 'لا يوجد قيد محاسبي لهذه العملية'} />
@@ -53,7 +52,7 @@ export function txSummary(t: AssetTx, L: ReturnType<typeof useLookups>) {
       return parts.join(' · ')
     }
     case 'costCenterTransfer': return `${L.ccName(t.fromCostCenterId ?? '')} ← ${L.ccName(t.toCostCenterId ?? '')} — سريان ${t.date}`
-    case 'sale': return `بيع إلى ${t.party} بمبلغ ${money(t.amount)} — التكلفة ${money(t.fromValue ?? 0)}، المجمّع ${money(t.accumulatedAtEvent ?? 0)}`
+    case 'sale': return `بيع إلى ${t.party} بمبلغ ${money(t.amount)} (الفاتورة ${t.sourceDocRef ?? '—'}) — التكلفة ${money(t.fromValue ?? 0)}، المجمّع ${money(t.accumulatedAtEvent ?? 0)}`
     case 'disposal': return `التكلفة ${money(t.fromValue ?? 0)}، المجمّع ${money(t.accumulatedAtEvent ?? 0)}، المشطوب ${money((t.fromValue ?? 0) - (t.accumulatedAtEvent ?? 0))}`
     case 'capitalization': return `القيمة الأصلية ${money(t.amount)}`
     case 'manualDepreciation': return `إهلاك يدوي ${money(t.amount)}${t.notes ? ` — ${t.notes}` : ''}`
@@ -62,20 +61,27 @@ export function txSummary(t: AssetTx, L: ReturnType<typeof useLookups>) {
   }
 }
 
-const REVERSIBLE = ['sale', 'disposal', 'costCenterTransfer']
+const DOC_ROUTE: Record<string, string> = { reval: 'revaluations', disposal: 'disposals', costAdj: 'cost-adjustments', manual: 'manual-depreciation', transfer: 'transfers' }
+
+/** Link to the transaction's source document (§3.7 SourceDoc*). */
+export function sourceLink(db: DB, t: AssetTx): { to: string; label: string } | null {
+  if (!t.sourceDocId) return null
+  if (t.sourceDocType === 'SaleInvoice') return { to: `/sales-invoices/${t.sourceDocId}`, label: t.sourceDocRef ?? '' }
+  if (t.sourceDocType === '239') return { to: `/opening-balances/${t.sourceDocId}`, label: t.sourceDocRef ?? '' }
+  const d = db.docs.find((x) => x.id === t.sourceDocId)
+  return d ? { to: `/${DOC_ROUTE[d.kind]}/${d.id}`, label: d.number } : null
+}
 
 export function TxModal({ tx, onClose }: { tx: AssetTx; onClose: () => void }) {
   const L = useLookups()
-  const { db, run, can } = useStore()
-  const [ask, setAsk] = useState(false)
+  const { db } = useStore()
   const live = db.txs.find((t) => t.id === tx.id) ?? tx
   const original = live.reversedTxId ? db.txs.find((t) => t.id === live.reversedTxId) : undefined
   const reversal = db.txs.find((t) => t.reversedTxId === live.id)
-  const canReverse = REVERSIBLE.includes(live.type) && !live.isReversed && !live.reversedTxId && can('reverse')
-  const reverse = () => run((d) => (live.type === 'costCenterTransfer' ? reverseCostCenterTransfer(d, live.id) : reverseExit(d, live.id)), `تم عكس ${live.number}`)
+  const src = sourceLink(db, live)
   return (
     <Modal wide title={`${txLabel[live.type]} — ${live.number}`} onClose={onClose}
-      footer={canReverse ? <button type="button" className="btn btn-danger" onClick={() => setAsk(true)}>{live.type === 'sale' ? 'عكس البيع' : live.type === 'disposal' ? 'عكس الاستبعاد' : 'عكس النقل'}</button> : undefined}>
+      footer={src ? <Link to={src.to} onClick={onClose} className="btn btn-primary">فتح المستند المصدر {src.label}</Link> : undefined}>
       <div className="mb-4 grid grid-cols-2 gap-3 text-sm md:grid-cols-4">
         <Info label="الأصل" value={L.assetLabel(live.assetId)} />
         <Info label="التاريخ الفعلي" value={live.date} ltr />
@@ -85,11 +91,14 @@ export function TxModal({ tx, onClose }: { tx: AssetTx; onClose: () => void }) {
         {live.notes && live.notes !== txSummary(live, L) && <div className="col-span-2 md:col-span-4"><Info label="ملاحظات" value={live.notes} /></div>}
         {(live.isReversed || original) && (
           <div className="col-span-2 rounded-md bg-amber-50 px-3 py-2 text-xs text-amber-800 md:col-span-4">
-            {live.isReversed && reversal && <>هذه الحركة معكوسة بـ <b dir="ltr">{reversal.number}</b>. </>}
+            {live.isReversed && reversal && !live.reversedTxId && <>هذه الحركة معكوسة. </>}
             {original && <>هذه حركة عكس لـ <b dir="ltr">{original.number}</b>، مؤرَّخة بتاريخ الحركة الأصلية. </>}
             العناصر المعكوسة تُعامل في التقارير كأنها لم تحدث.
           </div>
         )}
+        <div className="col-span-2 text-xs text-gray-500 md:col-span-4">
+          السجل للقراءة فقط: {live.type === 'sale' || live.type === 'saleReversal' ? 'البيع يُرحَّل ويُعكس عبر فاتورة المبيعات (إلغاء الفاتورة يعكس البيع تلقائياً).' : src ? 'الترحيل والعكس من المستند المصدر.' : 'إجراء على الأصل أو قيد افتتاحي.'}
+        </div>
       </div>
       <h4 className="mb-2 text-sm font-semibold">قيد الوحدة</h4>
       <JournalTable lines={live.journal} date={live.journal.length ? live.date : undefined}
@@ -100,7 +109,6 @@ export function TxModal({ tx, onClose }: { tx: AssetTx; onClose: () => void }) {
           <JournalTable lines={live.externalJournal} />
         </div>
       )}
-      {ask && <Confirm danger title="تأكيد العكس" text="يُضاف صف عكس مؤرَّخ بتاريخ الحركة الأصلية مع قيد عكسي، ولا يُعدَّل الصف الأصلي. هل تريد المتابعة؟" onClose={() => setAsk(false)} onYes={() => { if (reverse()) onClose() }} />}
     </Modal>
   )
 }
