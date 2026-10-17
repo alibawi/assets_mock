@@ -196,6 +196,7 @@ export default function AssetForm() {
           <>
             <SaveSplit disabled={!can(isNew ? 'create' : 'update') || final} onSave={() => save()} items={[{ label: 'حفظ وإنشاء جديد', onClick: () => save(true) }]} />
             {draft && !isNew && can('post') && <button type="button" className="btn" onClick={() => setAction('capitalize')}><CheckCircle2 className="h-4 w-4" />رسملة</button>}
+            {booked && can('create') && <button type="button" className="btn" onClick={sellAsset} title="ينشئ فاتورة مبيعات مسودة بسطر هذا الأصل (§5.6.9)"><Wallet className="h-4 w-4" />بيع</button>}
             <button type="button" className="btn" onClick={() => nav('/assets')}>إلغاء</button>
             {!isNew && <Dropdown label="إجراءات" icon={MoreHorizontal} items={items} />}
           </>

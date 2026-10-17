@@ -214,3 +214,10 @@
 
 **Next step:** accountant approval of the proposed numbers.
 
+
+---
+
+## 2026-10-17 — Visible «بيع» button on the asset card
+
+**Completed:** the sale action (path B, §5.6.9) was only inside «إجراءات»; it is now a toolbar button next to «حفظ» for assets in Running / Paused / Closed, creating a draft sales invoice with the asset line.
+**Verification:** `npm run build` passes; browser: FA-000008 toolbar shows «حفظ | بيع | إلغاء | إجراءات».
