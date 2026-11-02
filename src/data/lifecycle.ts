@@ -84,7 +84,7 @@ const fail = (msg: string) => msg
 /** Required account checks for a class — §3.1 mandatory rule (applied to the default-area row, §3.1.1). */
 export function classAccountErrors(db: DB, c: { assetAcct: string; accumAcct: string; expenseAcct: string; gainAcct: string; lossAcct: string; saleClearingAcct?: string; impairmentLossAcct?: string; unplannedExpenseAcct?: string; unplannedAccumAcct?: string }, depreciable: boolean) {
   const req: [string, string][] = [['حساب الأصل', c.assetAcct], ['حساب الربح من الاستبعاد', c.gainAcct], ['حساب الخسارة من الاستبعاد', c.lossAcct], ['حساب تسوية بيع الأصول', c.saleClearingAcct ?? ''], ['حساب خسائر هبوط القيمة', c.impairmentLossAcct ?? '']]
-  if (depreciable) req.push(['حساب مجمّع الاندثار', c.accumAcct], ['حساب مصروف الاندثار', c.expenseAcct], ['حساب مصروف الإهلاك غير المخطط', c.unplannedExpenseAcct ?? ''], ['حساب مجمّع الإهلاك غير المخطط', c.unplannedAccumAcct ?? ''])
+  if (depreciable) req.push(['حساب مجمّع الاندثار', c.accumAcct], ['حساب مصروف الاندثار', c.expenseAcct], ['حساب مصروف الاندثار غير المخطط', c.unplannedExpenseAcct ?? ''], ['حساب مجمّع الاندثار غير المخطط', c.unplannedAccumAcct ?? ''])
   const errs: string[] = []
   req.forEach(([label, code]) => {
     const acct = db.accounts.find((x) => x.code === code)
@@ -122,7 +122,7 @@ export function capitalize(db: DB, id: string, date: string): string | null {
   if (!a.classId) return fail('يجب تحديد فئة الأصل')
   if (a.originalValue <= 0) return fail('القيمة الأصلية يجب أن تكون أكبر من صفر')
   if (a.salvage >= a.originalValue) return fail('القيمة التخريدية يجب أن تكون أقل من القيمة الأصلية')
-  if (!a.depStartDate) return fail('تاريخ بدء الإهلاك مطلوب')
+  if (!a.depStartDate) return fail('تاريخ بدء الاندثار مطلوب')
   const le = c.isDepreciable && c.kind !== 'lowValue' ? lifeError(a.lifeMonths, a.periodicity) : null
   if (le) return le
   const lv = lowValueError(db, a)
@@ -160,9 +160,9 @@ export function cancelAsset(db: DB, id: string, date: string, notes: string): st
 /** §4.1 Running → Draft when nothing has been posted. */
 export function undoCapitalization(db: DB, id: string, notes: string): string | null {
   const a = get(db, id)
-  if (a.state !== 'running') return fail('التراجع عن الرسملة متاح للأصول قيد الإهلاك فقط')
+  if (a.state !== 'running') return fail('التراجع عن الرسملة متاح للأصول قيد الاندثار فقط')
   if (a.isLegacy) return fail('لا يمكن التراجع عن رسملة أصل مستورد')
-  if (postedLines(db, a.id).length) return fail('لا يمكن التراجع: يوجد قسط إهلاك مُرحّل')
+  if (postedLines(db, a.id).length) return fail('لا يمكن التراجع: يوجد قسط اندثار مُرحّل')
   const live = (t: TxType) => db.txs.some((x) => x.assetId === a.id && x.type === t && !x.isReversed)
   if (live('revaluation') || live('impairment')) return fail('لا يمكن التراجع: توجد إعادة تقييم أو هبوط قيمة')
   const cap = db.txs.find((x) => x.assetId === a.id && x.type === 'capitalization' && !x.isReversed)!
@@ -180,7 +180,7 @@ export function undoCapitalization(db: DB, id: string, notes: string): string | 
 
 export function pause(db: DB, id: string, date: string, notes: string): string | null {
   const a = get(db, id)
-  if (a.state !== 'running') return fail('يمكن إيقاف الأصل قيد الإهلاك فقط')
+  if (a.state !== 'running') return fail('يمكن إيقاف الأصل قيد الاندثار فقط')
   a.state = 'paused'
   addTx(db, a, 'pause', date, { fromState: 'running', toState: 'paused', notes })
   return null
@@ -222,7 +222,7 @@ export function revalue(db: DB, id: string, date: string, newValue: number, note
 /** Impairment (238) — revaluation downward. */
 export function impair(db: DB, id: string, date: string, newValue: number, notes: string): string | null {
   const a = get(db, id)
-  if (a.state !== 'running' && a.state !== 'paused') return fail('هبوط القيمة متاح للأصول قيد الإهلاك أو الموقوفة')
+  if (a.state !== 'running' && a.state !== 'paused') return fail('هبوط القيمة متاح للأصول قيد الاندثار أو الموقوفة')
   const ac = acctsOf(db, a.classId)
   const old = bookValue(db, a)
   const diff = old - newValue
@@ -245,7 +245,7 @@ export function impair(db: DB, id: string, date: string, newValue: number, notes
 /** §5.6.2 AddCost (240). Optional new remaining life is logged as an Adjustment. */
 export function addCost(db: DB, id: string, date: string, amount: number, sourceDocRef: string, newRemainingLife: number | null, notes: string): string | null {
   const a = get(db, id)
-  if (!['running', 'paused', 'closed'].includes(a.state)) return fail('الإضافة اللاحقة متاحة للأصول قيد الإهلاك أو الموقوفة أو مكتملة الإهلاك')
+  if (!['running', 'paused', 'closed'].includes(a.state)) return fail('الإضافة اللاحقة متاحة للأصول قيد الاندثار أو الموقوفة أو مكتملة الاندثار')
   if (amount <= 0) return fail('المبلغ مطلوب')
   const ne = notBefore(db, a, date)
   if (ne) return ne
@@ -279,7 +279,7 @@ export function addCost(db: DB, id: string, date: string, amount: number, source
 /** §5.6.3 ReduceCost (241). */
 export function reduceCost(db: DB, id: string, date: string, amount: number, sourceDocRef: string, notes: string): string | null {
   const a = get(db, id)
-  if (a.state !== 'running' && a.state !== 'paused') return fail('تخفيض الاقتناء متاح للأصول قيد الإهلاك أو الموقوفة')
+  if (a.state !== 'running' && a.state !== 'paused') return fail('تخفيض الاقتناء متاح للأصول قيد الاندثار أو الموقوفة')
   if (amount <= 0) return fail('المبلغ مطلوب')
   if (grossOf(a) - amount < accumOf(db, a)) return fail('Assets:ReductionExceedsBookValue — القيمة بعد التخفيض أقل من المجمّع المُرحّل والمستورد؛ استبعد الأصل أو عدّله')
   const ne = notBefore(db, a, date)
@@ -307,10 +307,10 @@ export function reduceCost(db: DB, id: string, date: string, amount: number, sou
 export function manualDepreciation(db: DB, id: string, date: string, amount: number, notes: string): string | null {
   const a = get(db, id)
   const c = cls(db, a)
-  if (a.state !== 'running' && a.state !== 'paused') return fail('الإهلاك اليدوي متاح للأصول قيد الإهلاك أو الموقوفة')
-  if (!c.isDepreciable || c.kind === 'land') return fail('الفئة غير قابلة للإهلاك')
+  if (a.state !== 'running' && a.state !== 'paused') return fail('الاندثار اليدوي متاح للأصول قيد الاندثار أو الموقوفة')
+  if (!c.isDepreciable || c.kind === 'land') return fail('الفئة غير قابلة للاندثار')
   if (amount <= 0) return fail('المبلغ يجب أن يكون أكبر من صفر')
-  if (amount > remainingDepreciable(db, a)) return fail(`المبلغ يتجاوز القيمة المتبقية القابلة للإهلاك (${fmt(remainingDepreciable(db, a))})`)
+  if (amount > remainingDepreciable(db, a)) return fail(`المبلغ يتجاوز القيمة المتبقية القابلة للاندثار (${fmt(remainingDepreciable(db, a))})`)
   const ne = notBefore(db, a, date)
   if (ne) return ne
   const ac = acctsOf(db, a.classId)
@@ -318,8 +318,8 @@ export function manualDepreciation(db: DB, id: string, date: string, amount: num
   const tx = addTx(db, a, 'manualDepreciation', date, {
     amount, notes,
     journal: [
-      { account: acc(db, ac.unplannedExpenseAcct || ac.expenseAcct), desc: `إهلاك يدوي (غير مخطط) ${a.code}`, debit: amount, credit: 0, costCenter: ccName(db, ccAsOf(db, a, date)) },
-      { account: acc(db, ac.unplannedAccumAcct || ac.accumAcct), desc: `إهلاك يدوي (غير مخطط) ${a.code}`, debit: 0, credit: amount },
+      { account: acc(db, ac.unplannedExpenseAcct || ac.expenseAcct), desc: `اندثار يدوي (غير مخطط) ${a.code}`, debit: amount, credit: 0, costCenter: ccName(db, ccAsOf(db, a, date)) },
+      { account: acc(db, ac.unplannedAccumAcct || ac.accumAcct), desc: `اندثار يدوي (غير مخطط) ${a.code}`, debit: 0, credit: amount },
     ],
   })
   db.lines.push({
@@ -443,8 +443,8 @@ function exitAsset(db: DB, id: string, kind: 'sale' | 'disposal', date: string, 
   const journal: JournalLine[] = []
   if (p.toDate > 0) {
     journal.push(
-      { account: acc(db, ac.expenseAcct), desc: `إهلاك حتى ${date} — ${a.code}`, debit: p.toDate, credit: 0, costCenter: ccName(db, ccAsOf(db, a, date)) },
-      { account: acc(db, ac.accumAcct), desc: `إهلاك حتى ${date} — ${a.code}`, debit: 0, credit: p.toDate },
+      { account: acc(db, ac.expenseAcct), desc: `اندثار حتى ${date} — ${a.code}`, debit: p.toDate, credit: 0, costCenter: ccName(db, ccAsOf(db, a, date)) },
+      { account: acc(db, ac.accumAcct), desc: `اندثار حتى ${date} — ${a.code}`, debit: 0, credit: p.toDate },
     )
   }
   const gl = (kind === 'sale' ? price : 0) - p.nbv
@@ -461,7 +461,7 @@ function exitAsset(db: DB, id: string, kind: 'sale' | 'disposal', date: string, 
   const tx = addTx(db, a, kind, date, {
     amount: kind === 'sale' ? price : 0, fromValue: p.gross, toValue: 0, accumulatedAtEvent: p.accum, toDateAmount: p.toDate, fromState, toState: kind === 'sale' ? 'sold' : 'disposed',
     party: buyer || undefined, journal,
-    notes: notes || (p.toDate ? `يشمل إهلاكاً حتى التاريخ ${fmt(p.toDate)} (${Math.round(p.g * 100)}% من قسط الفترة)` : ''),
+    notes: notes || (p.toDate ? `يشمل اندثاراً حتى التاريخ ${fmt(p.toDate)} (${Math.round(p.g * 100)}% من قسط الفترة)` : ''),
   })
   if (p.toDate > 0) {
     db.lines.push({
@@ -517,7 +517,7 @@ export function reverseTx(db: DB, txId: string): string | null {
     a.custodianId = t.fromCustodianId!
   } else if (VALUE_TYPES.includes(t.type)) {
     const posted = postedLines(db, a.id).find((l) => l.type === 'depreciation' && l.date > t.date)
-    if (posted) return fail(`Assets:ReverseLaterRunsFirst — للأصل ${a.code} قسط مُرحّل بتاريخ ${posted.date} بعد الحركة؛ اعكس دورات الإهلاك اللاحقة أولاً`)
+    if (posted) return fail(`Assets:ReverseLaterRunsFirst — للأصل ${a.code} قسط مُرحّل بتاريخ ${posted.date} بعد الحركة؛ اعكس دورات الاندثار اللاحقة أولاً`)
     const later = db.txs.find((x) => x.assetId === a.id && x.id !== t.id && !x.isReversed && !x.reversedTxId && VALUE_TYPES.includes(x.type) && db.txs.indexOf(x) > db.txs.indexOf(t))
     if (later) return fail(`اعكس الحركة اللاحقة ${later.number} على ${a.code} أولاً`)
     const delta = (t.toValue ?? 0) - (t.fromValue ?? 0)
@@ -602,7 +602,7 @@ export function postRun(db: DB, runId: string, date: string): string | null {
     const a = get(db, aid)
     if (!db.lines.some((l) => l.assetId === aid && !l.isPosted)) {
       a.state = 'closed'
-      addTx(db, a, 'adjustment', monthEnd(r.periodEnd), { fromState: 'running', toState: 'closed', notes: `اكتمل إهلاك الأصل بالدورة ${r.number}` })
+      addTx(db, a, 'adjustment', monthEnd(r.periodEnd), { fromState: 'running', toState: 'closed', notes: `اكتمل اندثار الأصل بالدورة ${r.number}` })
     }
   })
   return null

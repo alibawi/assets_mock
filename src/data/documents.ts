@@ -15,7 +15,7 @@ export const RECEIVABLE_ACCT = '1210000001'
 // ---- Transaction documents -------------------------------------------------------------------
 
 export const docKindLabel: Record<DocKind, string> = {
-  reval: 'إعادة التقييم والهبوط', disposal: 'الاستبعاد بلا مقابل', costAdj: 'الإضافة والتخفيض', manual: 'الإهلاك اليدوي', transfer: 'النقل',
+  reval: 'إعادة التقييم والهبوط', disposal: 'الاستبعاد بلا مقابل', costAdj: 'الإضافة والتخفيض', manual: 'الاندثار اليدوي', transfer: 'النقل',
 }
 export const docRoute: Record<DocKind, string> = { reval: 'revaluations', disposal: 'disposals', costAdj: 'cost-adjustments', manual: 'manual-depreciation', transfer: 'transfers' }
 
@@ -240,9 +240,9 @@ export function checkRow(db: DB, b: OpeningBatch, r: ImportRow): RowCheck {
     if (periodEndOf(b.cutoffDate, c.periodicity, fs) !== b.cutoffDate) errors.push('تاريخ القطع ليس نهاية فترة')
     if (c.kind !== 'land' && r.remainingLife % MPP[c.periodicity] !== 0) errors.push(`العمر المتبقي ليس من مضاعفات ${MPP[c.periodicity]} أشهر`)
     const base = r.originalValue - r.salvage
-    if (r.importedAccum > base) errors.push('المجمّع أكبر من قاعدة الإهلاك')
+    if (r.importedAccum > base) errors.push('المجمّع أكبر من قاعدة الاندثار')
     if (c.kind !== 'land' && r.remainingLife === 0 && r.originalValue - r.importedAccum > r.salvage) errors.push('العمر المتبقي 0 بينما القيمة الدفترية أعلى من التخريدية')
-    if (c.kind !== 'land' && r.remainingLife > 0 && r.importedAccum >= base && base > 0) warnings.push('مُهلَك بالكامل وعمر متبقٍّ > 0 — يُستورد «مكتمل الإهلاك»')
+    if (c.kind !== 'land' && r.remainingLife > 0 && r.importedAccum >= base && base > 0) warnings.push('مُهلَك بالكامل وعمر متبقٍّ > 0 — يُستورد «مكتمل الاندثار»')
   }
   return { errors, warnings }
 }

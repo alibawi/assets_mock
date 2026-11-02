@@ -210,10 +210,10 @@ export function runJournal(db: DB, r: DepRun): JournalLine[] {
   const out: JournalLine[] = []
   dr.forEach((v, k) => {
     const [code, ccId] = k.split('|')
-    out.push({ account: acc(code), desc: `إهلاك ${r.periodEnd}`, debit: v, credit: 0, costCenter: cc(ccId) })
+    out.push({ account: acc(code), desc: `اندثار ${r.periodEnd}`, debit: v, credit: 0, costCenter: cc(ccId) })
   })
   out.sort((x, y) => x.account.localeCompare(y.account) || (x.costCenter ?? '').localeCompare(y.costCenter ?? ''))
-  ;[...cr.entries()].sort((x, y) => x[0].localeCompare(y[0])).forEach(([code, v]) => out.push({ account: acc(code), desc: `إهلاك ${r.periodEnd}`, debit: 0, credit: v }))
+  ;[...cr.entries()].sort((x, y) => x[0].localeCompare(y[0])).forEach(([code, v]) => out.push({ account: acc(code), desc: `اندثار ${r.periodEnd}`, debit: 0, credit: v }))
   return out
 }
 

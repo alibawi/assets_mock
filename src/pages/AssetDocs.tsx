@@ -233,7 +233,7 @@ export function DocForm({ kind }: { kind: DocKind }) {
       </div>
 
       {ask === 'post' && <Confirm title="ترحيل المستند" text={`سيُرحَّل ${d.lines.length} سطراً كحركات ${docTitle(d)} بالرقم ${d.number} ويُعاد توليد الأقساط غير المُرحّلة. هل تريد المتابعة؟`} onClose={() => setAsk(null)} onYes={() => save(true)} />}
-      {ask === 'reverse' && <Confirm danger title="عكس المستند" text="تُعكس كل حركات المستند (آخر سطر أولاً) بتاريخها الأصلي. يُرفض إن وُجد قسط مُرحّل بعدها — اعكس دورات الإهلاك اللاحقة أولاً." onClose={() => setAsk(null)}
+      {ask === 'reverse' && <Confirm danger title="عكس المستند" text="تُعكس كل حركات المستند (آخر سطر أولاً) بتاريخها الأصلي. يُرفض إن وُجد قسط مُرحّل بعدها — اعكس دورات الاندثار اللاحقة أولاً." onClose={() => setAsk(null)}
         onYes={() => run((x) => reverseDoc(x, d.id), 'تم عكس المستند')} />}
       {ask === 'delete' && <Confirm danger title="حذف المسودة" text="حذف المسودة لا يؤثر على الأصول." onClose={() => setAsk(null)}
         onYes={() => { if (run((x) => { x.docs = x.docs.filter((y) => y.id !== d.id) }, 'تم حذف المسودة')) { toast('تم حذف المسودة'); nav(`/${docRoute[kind]}`) } }} />}
@@ -244,9 +244,9 @@ export function DocForm({ kind }: { kind: DocKind }) {
 function LineHeads({ d }: { d: AssetDoc }) {
   switch (d.kind) {
     case 'reval': return <><th className="!text-end">القيمة الدفترية الحالية</th><th className="!text-end w-44">القيمة الجديدة</th><th className="!text-end">الفرق</th></>
-    case 'disposal': return <><th className="!text-end">التكلفة</th><th className="!text-end">المجمّع</th><th className="!text-end">إهلاك حتى التاريخ</th><th className="!text-end">المشطوب (خسارة)</th></>
+    case 'disposal': return <><th className="!text-end">التكلفة</th><th className="!text-end">المجمّع</th><th className="!text-end">اندثار حتى التاريخ</th><th className="!text-end">المشطوب (خسارة)</th></>
     case 'costAdj': return <><th className="!text-end">القيمة الأصلية</th><th className="!text-end w-40">المبلغ</th><th className="w-40">مرجع الفاتورة / مذكرة الدائن</th>{d.adjType === 'addition' && <th className="w-32">عمر متبقٍّ جديد</th>}<th className="!text-end">بعد</th></>
-    case 'manual': return <><th className="!text-end">المتبقي القابل للإهلاك</th><th className="!text-end w-44">المبلغ</th></>
+    case 'manual': return <><th className="!text-end">المتبقي القابل للاندثار</th><th className="!text-end w-44">المبلغ</th></>
     case 'transfer': return d.transferType === 'location'
       ? <><th>الموقع الحالي</th><th className="w-56">الموقع الجديد</th><th>العهدة الحالية</th><th className="w-56">العهدة الجديدة</th></>
       : <><th>المركز الحالي</th><th className="w-56">المركز الجديد</th></>

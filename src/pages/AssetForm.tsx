@@ -50,7 +50,7 @@ function draftErrors(db: DB, a: Asset): string | null {
     if (periodEndOf(a.importCutoffDate, a.periodicity, db.settings.fiscalStartMonth) !== a.importCutoffDate) return 'تاريخ قطع الاستيراد يجب أن يكون نهاية فترة'
     if (a.remainingLifeAtImport === null || a.remainingLifeAtImport < 0) return 'العمر المتبقي عند الاستيراد إلزامي'
     if (a.remainingLifeAtImport % MPP[a.periodicity] !== 0) return 'العمر المتبقي يجب أن يكون من مضاعفات أشهر الفترة'
-    if (a.importedAccum > depBase(a)) return 'الإهلاك المستورد أكبر من قاعدة الإهلاك'
+    if (a.importedAccum > depBase(a)) return 'الاندثار المستورد أكبر من قاعدة الاندثار'
     if (c?.isDepreciable && a.remainingLifeAtImport === 0 && a.originalValue - a.importedAccum > a.salvage) return 'عمر متبقٍّ 0 بينما القيمة الدفترية أعلى من التخريدية'
   }
   return null
@@ -99,7 +99,7 @@ export default function AssetForm() {
     if (!a.custodianId) e.push('صاحب العهدة')
     if (!a.costCenterId) e.push('مركز الكلفة')
     if (!a.acquisitionDate) e.push('تاريخ الاقتناء')
-    if (!a.depStartDate) e.push('تاريخ بدء الإهلاك')
+    if (!a.depStartDate) e.push('تاريخ بدء الاندثار')
     if (a.originalValue <= 0) e.push('القيمة الأصلية')
     setErrors(e)
     if (e.length) { toast('يرجى إكمال الحقول الإلزامية', 'err'); return false }
@@ -168,8 +168,8 @@ export default function AssetForm() {
           { label: 'طباعة ملصق الأصل', icon: Barcode, onClick: () => setAction('tag') },
         ]
       : [
-          { label: 'إيقاف الإهلاك', icon: CirclePause, onClick: () => setAction('pause'), disabled: a.state !== 'running' || !can('post') },
-          { label: 'استئناف الإهلاك', icon: CirclePlay, onClick: () => setAction('resume'), disabled: a.state !== 'paused' || !can('post') },
+          { label: 'إيقاف الاندثار', icon: CirclePause, onClick: () => setAction('pause'), disabled: a.state !== 'running' || !can('post') },
+          { label: 'استئناف الاندثار', icon: CirclePlay, onClick: () => setAction('resume'), disabled: a.state !== 'paused' || !can('post') },
           { label: 'تراجع عن الرسملة', icon: Undo2, onClick: () => setAction('undo'), disabled: a.state !== 'running' || !can('reverse') },
           { label: 'تسوية — تعديل العمر الإنتاجي', icon: Clock3, onClick: () => setAction('life'), disabled: !booked || !can('post') || !c?.isDepreciable || c.kind === 'lowValue' },
           { label: 'مستند إعادة تقييم (زيادة)', icon: TrendingUp, onClick: () => nav(`/revaluations/new?asset=${a.id}`), disabled: !booked || !can('post') },
@@ -208,7 +208,7 @@ export default function AssetForm() {
         <div className="mb-3 rounded-md border border-sky-200 bg-sky-50 px-4 py-2.5 text-sm text-sky-800">
           {final
             ? `هذا الأصل ${stateLabel[a.state]} — حالة نهائية، السجل للقراءة فقط${a.state !== 'cancelled' ? ' (يمكن عكس البيع / الاستبعاد من «إجراءات»)' : ''}.`
-            : 'بعد الرسملة لا تُعدَّل القيمة أو إعدادات الإهلاك أو مركز الكلفة مباشرة؛ استخدم «إجراءات» ليُسجَّل الحدث بتاريخه الفعلي ويُعاد توليد الأقساط غير المُرحّلة فقط.'}
+            : 'بعد الرسملة لا تُعدَّل القيمة أو إعدادات الاندثار أو مركز الكلفة مباشرة؛ استخدم «إجراءات» ليُسجَّل الحدث بتاريخه الفعلي ويُعاد توليد الأقساط غير المُرحّلة فقط.'}
         </div>
       )}
 
@@ -245,8 +245,8 @@ export default function AssetForm() {
               <Field label="تاريخ الاقتناء" required>
                 <input type="date" className={`inp ${err('تاريخ الاقتناء')}`} value={a.acquisitionDate} disabled={!editable} onChange={(e) => set('acquisitionDate', e.target.value)} />
               </Field>
-              <Field label="تاريخ بدء الإهلاك (دخول الخدمة)" required>
-                <input type="date" className={`inp ${err('تاريخ بدء الإهلاك')}`} value={a.depStartDate} disabled={!editable} onChange={(e) => set('depStartDate', e.target.value)} />
+              <Field label="تاريخ بدء الاندثار (دخول الخدمة)" required>
+                <input type="date" className={`inp ${err('تاريخ بدء الاندثار')}`} value={a.depStartDate} disabled={!editable} onChange={(e) => set('depStartDate', e.target.value)} />
               </Field>
               <Field label="تاريخ الرسملة"><ReadOnly ltr>{a.capitalizationDate ?? '—'}</ReadOnly></Field>
               <Field label="المورّد"><Select value={a.partnerId} onChange={(v) => set('partnerId', v)} options={L.partnerOptions} placeholder="—" disabled={!editable} /></Field>
@@ -285,7 +285,7 @@ export default function AssetForm() {
                 {(a.method === 'DB' || a.method === 'DBSL') && (
                   <Field label="معامل التناقص"><NumInput value={a.decliningFactor ?? 2} disabled={!editable} onChange={(n) => set('decliningFactor', n)} /></Field>
                 )}
-                <Field label="مجال الإهلاك"><ReadOnly>01 — Local GAAP</ReadOnly></Field>
+                <Field label="مجال الاندثار"><ReadOnly>01 — Local GAAP</ReadOnly></Field>
                 <Field label="أصل مستورد (رصيد افتتاحي)">
                   <label className="flex h-8 items-center gap-2 text-sm">
                     <input type="checkbox" checked={a.isLegacy} disabled />
@@ -297,7 +297,7 @@ export default function AssetForm() {
                     <Field label="تاريخ قطع الاستيراد" required hint="نهاية فترة — أول قسط في الفترة التالية">
                       <input type="date" className="inp" value={a.importCutoffDate ?? ''} disabled onChange={(e) => set('importCutoffDate', e.target.value)} />
                     </Field>
-                    <Field label="الإهلاك المستورد" required><NumInput value={a.importedAccum} disabled onChange={(n) => set('importedAccum', n)} /></Field>
+                    <Field label="الاندثار المستورد" required><NumInput value={a.importedAccum} disabled onChange={(n) => set('importedAccum', n)} /></Field>
                     <Field label="العمر المتبقي عند الاستيراد (شهر)" required hint={suggestedRemaining !== null ? `المقترح: ${suggestedRemaining} = العمر − الأشهر حتى القطع` : undefined}>
                       <div className="flex gap-1">
                         <NumInput value={a.remainingLifeAtImport ?? 0} disabled onChange={(n) => set('remainingLifeAtImport', n)} />
@@ -309,9 +309,9 @@ export default function AssetForm() {
                 <Field label="إعادة تقييم / هبوط قيمة"><ReadOnly ltr>{money(a.revaluationAdj)}</ReadOnly></Field>
                 <Field label={accumWord(c?.kind)}><ReadOnly ltr>{money(accum)}</ReadOnly></Field>
                 <Field label="القيمة الدفترية" hint="التخريدية لا تُخصم"><ReadOnly ltr><b>{money(nbv)}</b></ReadOnly></Field>
-                <Field label="المتبقي القابل للإهلاك"><ReadOnly ltr>{existing ? money(remainingDepreciable(db, a)) : '—'}</ReadOnly></Field>
+                <Field label="المتبقي القابل للاندثار"><ReadOnly ltr>{existing ? money(remainingDepreciable(db, a)) : '—'}</ReadOnly></Field>
               </FormGrid>
-              {c && c.kind === 'land' && <div className="rounded-md bg-gray-50 px-3 py-2 text-xs text-gray-600">فئة «{c.name}» أرض — غير قابلة للإهلاك؛ الجدول فارغ والقيمة الدفترية تساوي القيمة الأصلية إلا بإعادة تقييم.</div>}
+              {c && c.kind === 'land' && <div className="rounded-md bg-gray-50 px-3 py-2 text-xs text-gray-600">فئة «{c.name}» أرض — غير قابلة للاندثار؛ الجدول فارغ والقيمة الدفترية تساوي القيمة الأصلية إلا بإعادة تقييم.</div>}
               {c && c.kind === 'lowValue' && <div className="rounded-md bg-amber-50 px-3 py-2 text-xs text-amber-800">أصل منخفض القيمة (§5.6.5): سطر واحد بـ 100% من القاعدة بنهاية فترة دخول الخدمة، فتحمّله أول دورة مصروفاً؛ ويبقى الأصل في السجل والجرد حتى الاستبعاد.{db.settings.lowValueThreshold !== null ? ` الحد الأقصى: ${money(db.settings.lowValueThreshold)}.` : ' حدّ القيمة معطّل.'}</div>}
 
               <div className="rounded-md border border-line">
@@ -479,7 +479,7 @@ export function LedgerTable({ db, from, to, setFrom, setTo, opening, rows, onOpe
       <div className="overflow-x-auto">
         <table className="tbl">
           <thead>
-            <tr><th>التاريخ</th><th>الحدث</th><th>الوثيقة</th><th>قيد</th><th className="!text-end">حركة التكلفة</th><th className="!text-end">حركة الإهلاك</th><th className="!text-end">التكلفة الجارية</th><th className="!text-end">المجمّع الجاري</th><th className="!text-end">الدفترية الجارية</th><th>ملاحظات</th></tr>
+            <tr><th>التاريخ</th><th>الحدث</th><th>الوثيقة</th><th>قيد</th><th className="!text-end">حركة التكلفة</th><th className="!text-end">حركة الاندثار</th><th className="!text-end">التكلفة الجارية</th><th className="!text-end">المجمّع الجاري</th><th className="!text-end">الدفترية الجارية</th><th>ملاحظات</th></tr>
           </thead>
           <tbody>
             <tr className="bg-gray-50 text-gray-600"><td colSpan={6}>الرصيد الافتتاحي</td><td className="num">{money(opening.cost)}</td><td className="num">{money(opening.accum)}</td><td className="num">{money(opening.cost - opening.accum)}</td><td /></tr>
@@ -514,7 +514,7 @@ function ActionModal({ kind, asset: a, onClose }: { kind: Exclude<Action, 'delet
   const [value, setValue] = useState(() => (a.isLegacy ? a.remainingLifeAtImport ?? 0 : a.lifeMonths))
   const posted = db.lines.filter((l) => l.assetId === a.id && l.isPosted && l.type === 'depreciation').length
   const titles: Record<typeof kind, string> = {
-    capitalize: 'رسملة الأصل', cancel: 'إلغاء الأصل', undo: 'تراجع عن الرسملة', pause: 'إيقاف الإهلاك', resume: 'استئناف الإهلاك', life: 'تسوية — تعديل العمر الإنتاجي',
+    capitalize: 'رسملة الأصل', cancel: 'إلغاء الأصل', undo: 'تراجع عن الرسملة', pause: 'إيقاف الاندثار', resume: 'استئناف الاندثار', life: 'تسوية — تعديل العمر الإنتاجي',
   }
   const submit = () => {
     const ok = run((d) => {
@@ -537,7 +537,7 @@ function ActionModal({ kind, asset: a, onClose }: { kind: Exclude<Action, 'delet
         <Field label="القيمة الدفترية الحالية"><ReadOnly ltr>{money(bookValue(db, stored))}</ReadOnly></Field>
         {kind === 'capitalize' && (
           <div className="col-span-2 space-y-1 rounded-md bg-gray-50 p-3 text-xs text-gray-600">
-            <div>• يتحوّل الأصل إلى «قيد الإهلاك» ويُولَّد الجدول ({methodLabel[a.method]}، {a.lifeMonths} شهراً، {periodicityLabel[a.periodicity]}، {prorataLabel[a.prorata]}).</div>
+            <div>• يتحوّل الأصل إلى «قيد الاندثار» ويُولَّد الجدول ({methodLabel[a.method]}، {a.lifeMonths} شهراً، {periodicityLabel[a.periodicity]}، {prorataLabel[a.prorata]}).</div>
             <div>• {a.sourceDocRef ? `مرتبط بفاتورة المشتريات ${a.sourceDocRef} — لا قيد رسملة من الوحدة.` : 'لا وثيقة شراء — قيد رسملة: مدين حساب الأصل / دائن الموردون.'}</div>
             <div>• للرسملة الجماعية: حدّد عدة مسودات من سجل الأصول.</div>
           </div>

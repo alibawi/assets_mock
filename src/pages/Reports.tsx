@@ -39,7 +39,7 @@ export default function Reports() {
             { id: 'register', label: 'سجل الأصول', icon: Table2 },
             { id: 'roll', label: 'جدول الحركة', icon: Layers3 },
             { id: 'ledger', label: 'بطاقة الأصل', icon: BookOpenCheck },
-            { id: 'forecast', label: 'توقّع الإهلاك', icon: CalendarRange },
+            { id: 'forecast', label: 'توقّع الاندثار', icon: CalendarRange },
             { id: 'location', label: 'حسب الموقع / العهدة', icon: MapPin },
             { id: 'disposals', label: 'الاستبعادات', icon: Trash2 },
             { id: 'recon', label: 'مطابقة دفتر الأستاذ', icon: Scale },
@@ -80,7 +80,7 @@ function Register() {
       </Filters>
       <Head text={`سجل الأصول بتاريخ ${date}`} />
       <table className="tbl">
-        <thead><tr><th>رمز الأصل</th><th>الاسم</th><th>الموقع</th><th>العهدة</th><th>مركز الكلفة</th><th className="!text-end">القيمة الأصلية</th><th className="!text-end">المجمّع</th><th className="!text-end">الدفترية</th><th className="!text-end">الإهلاك المعلّق</th><th className="!text-end">التخريدية</th></tr></thead>
+        <thead><tr><th>رمز الأصل</th><th>الاسم</th><th>الموقع</th><th>العهدة</th><th>مركز الكلفة</th><th className="!text-end">القيمة الأصلية</th><th className="!text-end">المجمّع</th><th className="!text-end">الدفترية</th><th className="!text-end">الاندثار المعلّق</th><th className="!text-end">التخريدية</th></tr></thead>
         <tbody>
           {db.classes.map((c) => {
             const rs = rows.filter((r) => r.a.classId === c.id)
@@ -105,7 +105,7 @@ function Register() {
         <tfoot><tr><td colSpan={5}>المجموع الكلي ({rows.length} أصل):</td><td className="num">{money(tot('cost'))}</td><td className="num">{money(tot('accum'))}</td><td className="num">{money(tot('nbv'))}</td><td className="num">{money(tot('pending'))}</td><td className="num">{money(tot('salvage'))}</td></tr></tfoot>
       </table>
       <p className="mt-2 text-xs text-gray-500">
-        الإهلاك المعلّق = أقساط غير مُرحّلة بتاريخ ≤ {date} — ليس جزءاً من القيمة الدفترية. القيمة التخريدية لا تُخصم من الدفترية.
+        الاندثار المعلّق = أقساط غير مُرحّلة بتاريخ ≤ {date} — ليس جزءاً من القيمة الدفترية. القيمة التخريدية لا تُخصم من الدفترية.
         {excludedLegacy > 0 && <b className="ms-1 text-amber-700">{excludedLegacy} أصل قديم مستبعد — تاريخ التقرير يسبق تاريخ قطع الاستيراد.</b>}
       </p>
     </>
@@ -150,7 +150,7 @@ function RollForward() {
       </table>
       <h4 className="mb-1 text-sm font-semibold">مجمّع الاندثار</h4>
       <table className="tbl mb-5">
-        <thead><tr><th>المجموعة</th><th className="!text-end">أول المدة</th><th className="!text-end">الإهلاك المُرحّل</th><th className="!text-end">مستورد افتتاحي</th><th className="!text-end">المُخرَج بالبيع/الاستبعاد</th><th className="!text-end">آخر المدة</th><th className="!text-end">غير مفسَّر</th></tr></thead>
+        <thead><tr><th>المجموعة</th><th className="!text-end">أول المدة</th><th className="!text-end">الاندثار المُرحّل</th><th className="!text-end">مستورد افتتاحي</th><th className="!text-end">المُخرَج بالبيع/الاستبعاد</th><th className="!text-end">آخر المدة</th><th className="!text-end">غير مفسَّر</th></tr></thead>
         <tbody>
           {rows.map((r) => (
             <tr key={r.key}>
@@ -214,7 +214,7 @@ function Forecast() {
         <Field label="من"><input type="date" className="inp w-44" value={from} onChange={(e) => setFrom(e.target.value)} /></Field>
         <Field label="إلى"><input type="date" className="inp w-44" value={to} onChange={(e) => setTo(e.target.value)} /></Field>
       </Filters>
-      <Head text={`توقّع الإهلاك (أقساط غير مُرحّلة للأصول قيد الإهلاك) من ${from} إلى ${to}`} />
+      <Head text={`توقّع الاندثار (أقساط غير مُرحّلة للأصول قيد الاندثار) من ${from} إلى ${to}`} />
       <table className="tbl">
         <thead><tr><th>الفترة</th>{cls.map((c) => <th key={c.id} className="!text-end">{c.name}</th>)}<th className="!text-end">الإجمالي</th></tr></thead>
         <tbody>
@@ -241,7 +241,7 @@ function ByLocation() {
       <Filters>
         <Field label="التجميع حسب"><div className="w-44"><Select value={by} onChange={(v) => setBy(v)} options={[{ value: 'location', label: 'الموقع' }, { value: 'custodian', label: 'صاحب العهدة' }]} /></div></Field>
       </Filters>
-      <Head text={`جرد الأصول حسب ${by === 'location' ? 'الموقع' : 'العهدة'} — جرد تنظيمي لا محاسبي (يشمل منخفضة القيمة ومكتملة الإهلاك)`} />
+      <Head text={`جرد الأصول حسب ${by === 'location' ? 'الموقع' : 'العهدة'} — جرد تنظيمي لا محاسبي (يشمل منخفضة القيمة ومكتملة الاندثار)`} />
       <table className="tbl">
         <thead><tr><th>رمز الأصل</th><th>الاسم</th><th>رقم الملصق</th><th>الرقم التسلسلي</th><th>{by === 'location' ? 'صاحب العهدة' : 'الموقع'}</th><th>الحالة</th></tr></thead>
         <tbody>
@@ -283,7 +283,7 @@ function Disposals() {
       </Filters>
       <Head text={`المبيعات والاستبعادات من ${from} إلى ${to} (المعكوسة مستبعدة)`} />
       <table className="tbl">
-        <thead><tr><th>رقم الحركة</th><th>المستند المصدر</th><th>التاريخ</th><th>النوع</th><th>الأصل</th><th>الجهة</th><th className="!text-end">التكلفة</th><th className="!text-end">إهلاك حتى التاريخ</th><th className="!text-end">المجمّع</th><th className="!text-end">الدفترية</th><th className="!text-end">المتحصّل</th><th className="!text-end">ربح / (خسارة)</th></tr></thead>
+        <thead><tr><th>رقم الحركة</th><th>المستند المصدر</th><th>التاريخ</th><th>النوع</th><th>الأصل</th><th>الجهة</th><th className="!text-end">التكلفة</th><th className="!text-end">اندثار حتى التاريخ</th><th className="!text-end">المجمّع</th><th className="!text-end">الدفترية</th><th className="!text-end">المتحصّل</th><th className="!text-end">ربح / (خسارة)</th></tr></thead>
         <tbody>
           {txs.map((t) => {
             const gl = (t.type === 'sale' ? t.amount : 0) - nbv(t)

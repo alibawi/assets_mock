@@ -8,7 +8,7 @@ export const permLabel: Record<Perm, string> = {
   create: 'إنشاء (.Create)',
   update: 'تعديل (.Update)',
   delete: 'حذف (.Delete)',
-  post: 'ترحيل: رسملة / إهلاك / بيع / استبعاد (.Post)',
+  post: 'ترحيل: رسملة / اندثار / بيع / استبعاد (.Post)',
   reverse: 'عكس (.Reverse)',
   settings: 'الفئات / المواقع / المجموعات',
 }
@@ -27,15 +27,15 @@ export const can = (role: RoleId, p: Perm) => rolePerms[role].includes(p)
 export type Action = 'View' | 'Create' | 'Update' | 'Delete' | 'Post' | 'Reverse'
 export const permGroups: { key: string; label: string; actions: Action[] }[] = [
   { key: 'Assets.Asset', label: 'الأصل (رسملة / إيقاف / استئناف / تسوية)', actions: ['View', 'Create', 'Update', 'Delete', 'Post', 'Reverse'] },
-  { key: 'Assets.AssetDepreciationRun', label: 'دورات الإهلاك', actions: ['View', 'Create', 'Update', 'Delete', 'Post', 'Reverse'] },
+  { key: 'Assets.AssetDepreciationRun', label: 'دورات الاندثار', actions: ['View', 'Create', 'Update', 'Delete', 'Post', 'Reverse'] },
   { key: 'Assets.AssetRevaluation', label: 'إعادة التقييم والهبوط', actions: ['View', 'Create', 'Update', 'Delete', 'Post', 'Reverse'] },
   { key: 'Assets.AssetDisposal', label: 'الاستبعاد', actions: ['View', 'Create', 'Update', 'Delete', 'Post', 'Reverse'] },
   { key: 'Assets.AssetCostAdjustment', label: 'الإضافة والتخفيض', actions: ['View', 'Create', 'Update', 'Delete', 'Post', 'Reverse'] },
-  { key: 'Assets.AssetManualDepreciation', label: 'الإهلاك اليدوي', actions: ['View', 'Create', 'Update', 'Delete', 'Post', 'Reverse'] },
+  { key: 'Assets.AssetManualDepreciation', label: 'الاندثار اليدوي', actions: ['View', 'Create', 'Update', 'Delete', 'Post', 'Reverse'] },
   { key: 'Assets.AssetTransfer', label: 'النقل', actions: ['View', 'Create', 'Update', 'Delete', 'Post', 'Reverse'] },
   { key: 'Assets.AssetOpeningBalance', label: 'استيراد الأصول القديمة', actions: ['View', 'Create', 'Update', 'Delete', 'Post', 'Reverse'] },
   { key: 'Assets.AssetTransaction', label: 'سجل حركات الأصول (قراءة فقط)', actions: ['View'] },
-  { key: 'Assets.Settings', label: 'الفئات / المواقع / المجموعات / مجالات الإهلاك', actions: ['View', 'Create', 'Update', 'Delete'] },
+  { key: 'Assets.Settings', label: 'الفئات / المواقع / المجموعات / مجالات الاندثار', actions: ['View', 'Create', 'Update', 'Delete'] },
 ]
 
 /** Which actions a role has on a group (§6.3 suggested roles). */

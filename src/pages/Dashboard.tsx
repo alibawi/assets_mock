@@ -35,11 +35,11 @@ export default function Dashboard() {
   const overdue = db.maintenance.filter((m) => (m.status === 'planned' || m.status === 'inProgress') && m.plannedDate < TODAY)
 
   const alerts = [
-    !octPosted && { icon: TrendingDown, tone: 'text-amber-600 bg-amber-50', text: `لم تُرحَّل دورة إهلاك ${periodLabel('2026-10')} بعد`, to: '/runs/new' },
+    !octPosted && { icon: TrendingDown, tone: 'text-amber-600 bg-amber-50', text: `لم تُرحَّل دورة اندثار ${periodLabel('2026-10')} بعد`, to: '/runs/new' },
     drafts.length > 0 && { icon: Package, tone: 'text-gray-600 bg-gray-100', text: `${drafts.length} أصول بحالة مسودة بانتظار الرسملة`, to: '/assets?state=draft' },
-    paused.length > 0 && { icon: CirclePause, tone: 'text-amber-600 bg-amber-50', text: `${paused.length} أصول موقوف إهلاكها`, to: '/assets?state=paused' },
+    paused.length > 0 && { icon: CirclePause, tone: 'text-amber-600 bg-amber-50', text: `${paused.length} أصول موقوف اندثارها`, to: '/assets?state=paused' },
     overdue.length > 0 && { icon: Wrench, tone: 'text-red-600 bg-red-50', text: `${overdue.length} أوامر صيانة متأخرة عن موعدها`, to: '/maintenance?tab=overdue' },
-    draftRuns.length > 0 && { icon: FileClock, tone: 'text-sky-600 bg-sky-50', text: `${draftRuns.length} دورة إهلاك محاكاة غير مُرحّلة`, to: '/runs' },
+    draftRuns.length > 0 && { icon: FileClock, tone: 'text-sky-600 bg-sky-50', text: `${draftRuns.length} دورة اندثار محاكاة غير مُرحّلة`, to: '/runs' },
   ].filter(Boolean) as { icon: typeof Package; tone: string; text: string; to: string }[]
 
   const recent = [...db.txs].sort((a, b) => b.date.localeCompare(a.date) || b.number.localeCompare(a.number)).slice(0, 7)
@@ -49,7 +49,7 @@ export default function Dashboard() {
     { label: 'إجمالي القيمة الأصلية', value: iqd(gross), sub: 'شاملة إعادة التقييم' },
     { label: 'مجمّع الاندثار', value: iqd(accum), sub: `${Math.round((accum / (gross || 1)) * 100)}% من القيمة الأصلية` },
     { label: 'القيمة الدفترية', value: iqd(gross - accum), sub: lastRun ? `حتى ${periodLabel(lastRun.periodEnd)}` : '' },
-    { label: 'إهلاك 2026 المُرحّل', value: iqd(ytd), sub: `${posted.filter((r) => r.periodEnd.startsWith('2026')).length} دورات` },
+    { label: 'اندثار 2026 المُرحّل', value: iqd(ytd), sub: `${posted.filter((r) => r.periodEnd.startsWith('2026')).length} دورات` },
   ]
 
   return (
@@ -59,7 +59,7 @@ export default function Dashboard() {
         title="لوحة الأصول الثابتة"
         actions={
           <>
-            {can('post') && <button type="button" className="btn" onClick={() => nav('/runs/new')}><TrendingDown className="h-4 w-4" />دورة إهلاك</button>}
+            {can('post') && <button type="button" className="btn" onClick={() => nav('/runs/new')}><TrendingDown className="h-4 w-4" />دورة اندثار</button>}
             {can('create') && <button type="button" className="btn btn-primary" onClick={() => nav('/assets/new')}><Plus className="h-4 w-4" />أصل جديد</button>}
           </>
         }

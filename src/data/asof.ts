@@ -87,7 +87,7 @@ export function reconciliationAsOf(db: DB, d: string) {
   const unpl = (r: RegisterRow) => (acctsOf(db, r.a.classId).unplannedAccumAcct ? unplannedAccumOf(db, r.a.id, d) : 0)
   accumCodes.forEach((code) => out.push({ code, kind: 'مجمّع الاندثار', gl: -(gl.get(code) ?? 0), mod: rows.filter((r) => acctsOf(db, r.a.classId).accumAcct === code).reduce((s, r) => s + r.accum - unpl(r), 0) }))
   ;[...new Set(db.classes.map((c) => acctsOf(db, c.id).unplannedAccumAcct).filter(Boolean))].forEach((code) => out.push({
-    code, kind: 'مجمّع الإهلاك غير المخطط', gl: -(gl.get(code) ?? 0), mod: rows.filter((r) => acctsOf(db, r.a.classId).unplannedAccumAcct === code).reduce((s, r) => s + unpl(r), 0),
+    code, kind: 'مجمّع الاندثار غير المخطط', gl: -(gl.get(code) ?? 0), mod: rows.filter((r) => acctsOf(db, r.a.classId).unplannedAccumAcct === code).reduce((s, r) => s + unpl(r), 0),
   }))
   return out
 }
@@ -111,7 +111,7 @@ export function assetLedger(db: DB, a: Asset, from: string, to: string, label: (
     if (t.type === 'manualDepreciation') dep = t.amount
     if (t.type === 'sale' || t.type === 'disposal') {
       // §7.2 — the ToDate line is its own row, just before the exit.
-      if (t.toDateAmount) evs.push({ date: t.date, order: i * 2, row: { date: t.date, event: 'إهلاك حتى تاريخ الإخراج', doc: t.number, je: true, cost: 0, dep: t.toDateAmount, reversed: t.isReversed, notes: '', txId: t.id } })
+      if (t.toDateAmount) evs.push({ date: t.date, order: i * 2, row: { date: t.date, event: 'اندثار حتى تاريخ الإخراج', doc: t.number, je: true, cost: 0, dep: t.toDateAmount, reversed: t.isReversed, notes: '', txId: t.id } })
       cost = -(t.fromValue ?? 0)
       dep = -(t.accumulatedAtEvent ?? 0)
     }
@@ -135,7 +135,7 @@ export function assetLedger(db: DB, a: Asset, from: string, to: string, label: (
     const amt = r.lines.filter((l) => l.assetId === a.id).reduce((s, l) => s + l.amount, 0)
     const d = db.lines.find((l) => l.runId === r.id && l.assetId === a.id)?.date
     if (!amt || !d || d < from || d > to) return
-    evs.push({ date: d, order: 0, row: { date: d, event: 'دورة إهلاك', doc: r.number, je: true, cost: 0, dep: amt, reversed: false, notes: '', runId: r.id } })
+    evs.push({ date: d, order: 0, row: { date: d, event: 'دورة اندثار', doc: r.number, je: true, cost: 0, dep: amt, reversed: false, notes: '', runId: r.id } })
   })
   evs.sort((x, y) => x.date.localeCompare(y.date) || x.order - y.order)
   let c = opening.cost

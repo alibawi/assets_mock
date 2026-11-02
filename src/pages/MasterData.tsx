@@ -79,7 +79,7 @@ export function ClassesPage() {
           { key: 'code', label: 'الرمز', render: (c) => <span className="font-medium text-navy" dir="ltr">{c.code}</span> },
           { key: 'name', label: 'اسم الفئة', render: (c) => <span>{c.name} <span className="text-xs text-gray-400" dir="ltr">{c.foreignName}</span></span> },
           { key: 'k', label: 'النوع', render: (c) => kindLabel[c.kind] },
-          { key: 'm', label: 'الطريقة', render: (c) => (c.kind === 'land' ? 'غير قابلة للإهلاك' : c.kind === 'lowValue' ? '100% في أول فترة' : methodLabel[c.method]) },
+          { key: 'm', label: 'الطريقة', render: (c) => (c.kind === 'land' ? 'غير قابلة للاندثار' : c.kind === 'lowValue' ? '100% في أول فترة' : methodLabel[c.method]) },
           { key: 'l', label: 'العمر (شهر)', num: true, render: (c) => (c.isDepreciable && c.kind !== 'lowValue' ? c.lifeMonths : '—') },
           { key: 'p', label: 'الدورية', render: (c) => periodicityLabel[c.periodicity] },
           { key: 'acc', label: 'حساب الأصل / المجمّع (مجال 01)', render: (c) => <span className="text-xs text-gray-600" dir="ltr">{acctsOf(db, c.id).assetAcct} / {acctsOf(db, c.id).accumAcct || '—'}</span> },
@@ -95,10 +95,10 @@ export function ClassesPage() {
             <Field label="رمز الفئة" required><input className="inp" dir="ltr" maxLength={20} value={edit.code} onChange={(e) => set('code', e.target.value.toUpperCase())} /></Field>
             <Field label="الاسم" required><input className="inp" value={edit.name} onChange={(e) => set('name', e.target.value)} /></Field>
             <Field label="الاسم الأجنبي"><input className="inp" dir="ltr" value={edit.foreignName} onChange={(e) => set('foreignName', e.target.value)} /></Field>
-            <Field label="نوع الأصل" required hint="أرض ⇒ بلا إهلاك · غير ملموس ⇒ «إطفاء» · منخفض القيمة ⇒ 100% في أول دورة">
+            <Field label="نوع الأصل" required hint="أرض ⇒ بلا اندثار · غير ملموس ⇒ «إطفاء» · منخفض القيمة ⇒ 100% في أول دورة">
               <Select<AssetKind> value={edit.kind} onChange={setKind} options={(Object.keys(kindLabel) as AssetKind[]).map((k) => ({ value: k, label: kindLabel[k] }))} />
             </Field>
-            <Field label="طريقة الإهلاك" required>
+            <Field label="طريقة الاندثار" required>
               <Select<DepMethod> value={edit.method} disabled={edit.kind === 'land' || edit.kind === 'lowValue'} onChange={(v) => set('method', v)} options={(Object.keys(methodLabel) as DepMethod[]).map((k) => ({ value: k, label: methodLabel[k] }))} />
             </Field>
             <Field label="العمر الإنتاجي (شهر)" required hint="من مضاعفات أشهر الفترة"><NumInput value={edit.lifeMonths} disabled={edit.kind === 'land' || edit.kind === 'lowValue'} onChange={(n) => set('lifeMonths', n)} /></Field>
@@ -119,8 +119,8 @@ export function ClassesPage() {
             <Field label="حساب فائض إعادة التقييم">{acct('revalSurplusAcct')}</Field>
             <Field label="حساب تسوية بيع الأصول" required hint="SAP: Revenue Clearing Account — إيراد سطر الأصل في فاتورة المبيعات">{acct('saleClearingAcct')}</Field>
             <Field label="حساب خسائر هبوط القيمة" required hint="SAP: Revaluation Loss Account (القرار 8)">{acct('impairmentLossAcct')}</Field>
-            <Field label="مصروف الإهلاك غير المخطط" required={edit.kind !== 'land'} hint="SAP: Unplanned Depreciation — الإهلاك اليدوي">{acct('unplannedExpenseAcct')}</Field>
-            <Field label="مجمّع الإهلاك غير المخطط" required={edit.kind !== 'land'} hint="SAP: Accumulated Unplanned Depr.">{acct('unplannedAccumAcct')}</Field>
+            <Field label="مصروف الاندثار غير المخطط" required={edit.kind !== 'land'} hint="SAP: Unplanned Depreciation — الاندثار اليدوي">{acct('unplannedExpenseAcct')}</Field>
+            <Field label="مجمّع الاندثار غير المخطط" required={edit.kind !== 'land'} hint="SAP: Accumulated Unplanned Depr.">{acct('unplannedAccumAcct')}</Field>
           </div>
         </Modal>
       )}

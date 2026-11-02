@@ -55,7 +55,7 @@ export function txSummary(t: AssetTx, L: ReturnType<typeof useLookups>) {
     case 'sale': return `بيع إلى ${t.party} بمبلغ ${money(t.amount)} (الفاتورة ${t.sourceDocRef ?? '—'}) — التكلفة ${money(t.fromValue ?? 0)}، المجمّع ${money(t.accumulatedAtEvent ?? 0)}`
     case 'disposal': return `التكلفة ${money(t.fromValue ?? 0)}، المجمّع ${money(t.accumulatedAtEvent ?? 0)}، المشطوب ${money((t.fromValue ?? 0) - (t.accumulatedAtEvent ?? 0))}`
     case 'capitalization': return `القيمة الأصلية ${money(t.amount)}`
-    case 'manualDepreciation': return `إهلاك يدوي ${money(t.amount)}${t.notes ? ` — ${t.notes}` : ''}`
+    case 'manualDepreciation': return `اندثار يدوي ${money(t.amount)}${t.notes ? ` — ${t.notes}` : ''}`
     case 'openingBalance': return t.notes
     default: return t.notes
   }

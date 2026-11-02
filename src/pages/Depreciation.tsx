@@ -18,10 +18,10 @@ export function RunsList() {
   const L = useLookups()
   return (
     <ListView
-      title="دورات الإهلاك"
+      title="دورات الاندثار"
       rows={[...db.runs].sort((a, b) => b.number.localeCompare(a.number))}
       newTo="/runs/new"
-      newLabel="دورة إهلاك جديدة"
+      newLabel="دورة اندثار جديدة"
       canNew={can('post')}
       rowTo={(r) => `/runs/${r.id}`}
       searchText={(r) => `${r.number} ${periodLabel(r.periodEnd)}`}
@@ -30,7 +30,7 @@ export function RunsList() {
         { key: 'p', label: 'نهاية الفترة', render: (r) => <span>{periodLabel(r.periodEnd)} <span className="text-xs text-gray-400" dir="ltr">({monthEnd(r.periodEnd)})</span></span> },
         { key: 'c', label: 'النطاق', render: (r) => (r.classId ? L.clsName(r.classId) : 'كل الفئات') },
         { key: 'a', label: 'عدد الأصول', num: true, render: (r) => new Set(r.lines.map((l) => l.assetId)).size },
-        { key: 't', label: 'إجمالي الإهلاك', num: true, render: (r) => money(runTotal(r)), total: (rs) => money(rs.filter((r) => r.status === 'posted').reduce((s, r) => s + runTotal(r), 0)) },
+        { key: 't', label: 'إجمالي الاندثار', num: true, render: (r) => money(runTotal(r)), total: (rs) => money(rs.filter((r) => r.status === 'posted').reduce((s, r) => s + runTotal(r), 0)) },
         { key: 'd', label: 'تاريخ الترحيل', render: (r) => <span dir="ltr">{r.postedAt ?? '—'}</span> },
         { key: 's', label: 'الحالة', render: (r) => <Badge tone={runStatusTone[r.status]}>{runStatusLabel[r.status]}</Badge> },
       ]}
@@ -66,8 +66,8 @@ export function RunForm() {
     return (
       <div>
         <PageHeader
-          crumbs={[{ label: 'دورات الإهلاك', to: '/runs' }, { label: 'دورة جديدة' }]}
-          title="دورة إهلاك جديدة"
+          crumbs={[{ label: 'دورات الاندثار', to: '/runs' }, { label: 'دورة جديدة' }]}
+          title="دورة اندثار جديدة"
           actions={<><button type="button" className="btn btn-primary" disabled={!can('post')} onClick={simulate}><Calculator className="h-4 w-4" />محاكاة</button><button type="button" className="btn" onClick={() => nav('/runs')}>إلغاء</button></>}
           summary={{ label: 'إجمالي متوقع', value: iqd(runTotal({ lines: preview })) }}
         />
@@ -77,7 +77,7 @@ export function RunForm() {
               <Select value={period} onChange={setPeriod} options={periods.map((p) => ({ value: p, label: `${periodLabel(p)} (${monthEnd(p)})` }))} />
             </Field>
             <Field label="النطاق"><Select value={cls} onChange={setCls} options={L.clsOptions} placeholder="كل الفئات" /></Field>
-            <Field label="مجال الإهلاك"><ReadOnly>01 — Local GAAP</ReadOnly></Field>
+            <Field label="مجال الاندثار"><ReadOnly>01 — Local GAAP</ReadOnly></Field>
             <Field label="أقساط مستحقة"><ReadOnly ltr>{preview.length}</ReadOnly></Field>
             <Field label="الفترة المحاسبية"><ReadOnly>مفتوحة</ReadOnly></Field>
           </FormGrid>
@@ -85,7 +85,7 @@ export function RunForm() {
             <div className="mt-3 rounded-md border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-700">{overlapError(db, period, cls) ?? gapError(db, period, cls)}</div>
           )}
           <ul className="mt-3 list-inside list-disc space-y-0.5 text-xs text-gray-500">
-            <li>المحاكاة تجمع الأقساط غير المُرحّلة المؤرَّخة داخل الفترة للأصول «قيد الإهلاك» فقط (الموقوفة مستثناة)، وتنشئ مسودة للمراجعة؛ لا قيد ولا تعليم ترحيل.</li>
+            <li>المحاكاة تجمع الأقساط غير المُرحّلة المؤرَّخة داخل الفترة للأصول «قيد الاندثار» فقط (الموقوفة مستثناة)، وتنشئ مسودة للمراجعة؛ لا قيد ولا تعليم ترحيل.</li>
             <li>لا تداخل: «كل الفئات» تتداخل مع أي فئة، ومسودة واحدة كحد أقصى لكل فترة ونطاق (§3.8.1).</li>
             <li>لا فجوات: تُرحَّل الأشهر الأقدم أولاً.</li>
             <li>كل سطر يأخذ مركز الكلفة الساري في تاريخه (§5.5).</li>
@@ -102,10 +102,10 @@ export function RunForm() {
   return (
     <div>
       <PageHeader
-        crumbs={[{ label: 'دورات الإهلاك', to: '/runs' }, { label: r.number }]}
-        title={`دورة إهلاك ${r.number}`}
+        crumbs={[{ label: 'دورات الاندثار', to: '/runs' }, { label: r.number }]}
+        title={`دورة اندثار ${r.number}`}
         badge={<Badge tone={runStatusTone[r.status]}>{runStatusLabel[r.status]}</Badge>}
-        summary={{ label: 'إجمالي الإهلاك', value: iqd(runTotal(r)) }}
+        summary={{ label: 'إجمالي الاندثار', value: iqd(runTotal(r)) }}
         actions={
           <>
             <button type="button" className="btn btn-primary" disabled={!draft || !can('post')} onClick={() => setAsk('post')}><Send className="h-4 w-4" />ترحيل</button>
@@ -135,7 +135,7 @@ export function RunForm() {
           <Field label="رقم الدورة"><ReadOnly ltr>{r.number}</ReadOnly></Field>
           <Field label="نهاية الفترة"><ReadOnly>{periodLabel(r.periodEnd)} — <span dir="ltr">{monthEnd(r.periodEnd)}</span></ReadOnly></Field>
           <Field label="النطاق"><ReadOnly>{r.classId ? L.clsName(r.classId) : 'كل الفئات'}</ReadOnly></Field>
-          <Field label="مجال الإهلاك"><ReadOnly>01 — Local GAAP</ReadOnly></Field>
+          <Field label="مجال الاندثار"><ReadOnly>01 — Local GAAP</ReadOnly></Field>
           <Field label="عدد الأصول / الأقساط"><ReadOnly ltr>{assets} / {r.lines.length}</ReadOnly></Field>
         </FormGrid>
       </Card>
@@ -183,7 +183,7 @@ export function RunForm() {
       </div>
 
       {ask === 'post' && (
-        <Confirm title="ترحيل دورة الإهلاك" text={`سيتم ترحيل ${r.lines.length} قسطاً لـ ${assets} أصلاً بمبلغ ${iqd(runTotal(r))} بقيد واحد. هل تريد المتابعة؟`}
+        <Confirm title="ترحيل دورة الاندثار" text={`سيتم ترحيل ${r.lines.length} قسطاً لـ ${assets} أصلاً بمبلغ ${iqd(runTotal(r))} بقيد واحد. هل تريد المتابعة؟`}
           onYes={() => run((d) => postRun(d, r.id, TODAY), 'تم ترحيل الدورة')} onClose={() => setAsk(null)} />
       )}
       {ask === 'reverse' && (

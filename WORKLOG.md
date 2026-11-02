@@ -221,3 +221,11 @@
 
 **Completed:** the sale action (path B, §5.6.9) was only inside «إجراءات»; it is now a toolbar button next to «حفظ» for assets in Running / Paused / Closed, creating a draft sales invoice with the asset line.
 **Verification:** `npm run build` passes; browser: FA-000008 toolbar shows «حفظ | بيع | إلغاء | إجراءات».
+
+
+---
+
+## 2026-11-02 — Arabic term: «اندثار» instead of «إهلاك» (owner request)
+
+**Completed:** replaced «الإهلاك» → «الاندثار» (89) then «إهلاك» → «اندثار» (48, incl. للإهلاك، بإهلاك، إهلاكها، إهلاكاً) across `src/**` (18 files), `README.md` and `docs/plan-addendum-ar.md`; `docs/source/*` untouched. «إطفاء» for intangibles unchanged. Data version 9 so stored data reseeds with the new wording.
+**Verification:** `npm run build` passes; `npm run check` all checks pass; `grep هلاك src` is empty; browser: every sidebar screen, asset card and a depreciation run show no «إهلاك», zero console errors.

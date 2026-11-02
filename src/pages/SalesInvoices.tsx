@@ -196,12 +196,12 @@ export function InvoiceForm() {
                 <JournalTable lines={t.journal} date={t.date} note="حساب «تسوية بيع الأصول» مدين هنا ودائن في قيد الفاتورة، فيُصفَّر بعد القيدين (§5.6.9)." />
               </div>
             ))}
-            {draft && inv.lines.some((l) => l.assetId) && <p className="text-xs text-gray-500">عند الترحيل: يُرحَّل الإهلاك حتى تاريخ الترحيل لكل أصل، ثم قيد الإخراج (مدين تسوية بيع الأصول + المجمّع [+ الخسارة] / دائن حساب الأصل [+ الربح]).</p>}
+            {draft && inv.lines.some((l) => l.assetId) && <p className="text-xs text-gray-500">عند الترحيل: يُرحَّل الاندثار حتى تاريخ الترحيل لكل أصل، ثم قيد الإخراج (مدين تسوية بيع الأصول + المجمّع [+ الخسارة] / دائن حساب الأصل [+ الربح]).</p>}
           </div>
         )}
       </div>
 
-      {ask === 'post' && <Confirm title="ترحيل الفاتورة" text={`يُرحَّل قيد الفاتورة بمبلغ ${iqd(total)}، ولكل سطر أصل: إهلاك حتى التاريخ وقيد إخراج وحالة «مباع». هل تريد المتابعة؟`} onClose={() => setAsk(null)} onYes={() => save(true)} />}
+      {ask === 'post' && <Confirm title="ترحيل الفاتورة" text={`يُرحَّل قيد الفاتورة بمبلغ ${iqd(total)}، ولكل سطر أصل: اندثار حتى التاريخ وقيد إخراج وحالة «مباع». هل تريد المتابعة؟`} onClose={() => setAsk(null)} onYes={() => save(true)} />}
       {ask === 'cancel' && <Confirm danger title="إلغاء الفاتورة" text={inv.status === 'posted' ? 'تُلغى الفاتورة ويُعكس البيع تلقائياً لكل أصل (بتاريخ البيع الأصلي) فتعود الأصول إلى حالتها السابقة.' : 'تُلغى المسودة.'} onClose={() => setAsk(null)}
         onYes={() => run((d) => cancelInvoice(d, inv.id), 'تم إلغاء الفاتورة')} />}
     </div>

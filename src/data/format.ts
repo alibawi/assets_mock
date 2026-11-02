@@ -6,7 +6,7 @@ export const money = (n: number) => (Math.round(n) || 0).toLocaleString('en-US')
 export const iqd = (n: number) => `IQD ${money(n)}`
 
 export const stateLabel: Record<AssetState, string> = {
-  draft: 'مسودة', running: 'قيد الإهلاك', paused: 'موقوف', closed: 'مكتمل الإهلاك', sold: 'مباع', disposed: 'مستبعد', cancelled: 'ملغى',
+  draft: 'مسودة', running: 'قيد الاندثار', paused: 'موقوف', closed: 'مكتمل الاندثار', sold: 'مباع', disposed: 'مستبعد', cancelled: 'ملغى',
 }
 export const stateTone: Record<AssetState, Tone> = {
   draft: 'gray', running: 'green', paused: 'amber', closed: 'blue', sold: 'red', disposed: 'red', cancelled: 'gray',
@@ -16,18 +16,18 @@ export const runStatusLabel: Record<RunStatus, string> = { draft: 'مسودة (�
 export const runStatusTone: Record<RunStatus, Tone> = { draft: 'gray', posted: 'green', reversed: 'red' }
 
 export const methodLabel: Record<DepMethod, string> = {
-  SL: 'القسط الثابت', DB: 'القسط المتناقص', DBSL: 'المتناقص ثم الثابت', NONE: 'بلا إهلاك',
+  SL: 'القسط الثابت', DB: 'القسط المتناقص', DBSL: 'المتناقص ثم الثابت', NONE: 'بلا اندثار',
 }
 export const periodicityLabel: Record<Periodicity, string> = { M: 'شهري', Q: 'ربع سنوي', Y: 'سنوي' }
 export const prorataLabel: Record<Prorata, string> = { NONE: 'بلا تحاصص (قسط أول كامل)', CONST: 'بالأشهر الكاملة', DAYS: 'بالأيام الفعلية' }
 export const kindLabel: Record<AssetKind, string> = { tangible: 'ملموس', intangible: 'غير ملموس (إطفاء)', land: 'أرض', lowValue: 'منخفض القيمة' }
 /** §5.6.5 — intangibles use «إطفاء» in the UI and reports. */
-export const depWord = (kind?: AssetKind) => (kind === 'intangible' ? 'الإطفاء' : 'الإهلاك')
+export const depWord = (kind?: AssetKind) => (kind === 'intangible' ? 'الإطفاء' : 'الاندثار')
 export const accumWord = (kind?: AssetKind) => (kind === 'intangible' ? 'مجمّع الإطفاء' : 'مجمّع الاندثار')
 
 export const txLabel: Record<TxType, string> = {
   capitalization: 'رسملة', capitalizationReversal: 'تراجع عن الرسملة', openingBalance: 'رصيد افتتاحي', addition: 'إضافة لاحقة',
-  acquisitionReduction: 'تخفيض اقتناء', manualDepreciation: 'إهلاك يدوي', revaluation: 'إعادة تقييم', impairment: 'هبوط قيمة',
+  acquisitionReduction: 'تخفيض اقتناء', manualDepreciation: 'اندثار يدوي', revaluation: 'إعادة تقييم', impairment: 'هبوط قيمة',
   transfer: 'نقل موقع / عهدة', costCenterTransfer: 'نقل مركز كلفة', pause: 'إيقاف', resume: 'استئناف', sale: 'بيع', saleReversal: 'عكس بيع',
   disposal: 'استبعاد', disposalReversal: 'عكس استبعاد', adjustment: 'تسوية', cancellation: 'إلغاء',
 }

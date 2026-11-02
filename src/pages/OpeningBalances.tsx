@@ -98,7 +98,7 @@ export function BatchForm() {
         }
       />
       <div className="mb-3 rounded-md border border-sky-200 bg-sky-50 px-4 py-2.5 text-sm text-sky-800">
-        المدخل الوحيد للأصول القديمة: رفع Excel ← معاينة بأخطاء الصف ← اعتماد (ينشئ الأصول «قيد الإهلاك» أو «مكتملة») ← عكس (ممنوع بعد ترحيل أي قسط لأصل في الدفعة).
+        المدخل الوحيد للأصول القديمة: رفع Excel ← معاينة بأخطاء الصف ← اعتماد (ينشئ الأصول «قيد الاندثار» أو «مكتملة») ← عكس (ممنوع بعد ترحيل أي قسط لأصل في الدفعة).
       </div>
 
       <Card className="mb-4">
@@ -120,7 +120,7 @@ export function BatchForm() {
         <div className="border-b border-line px-4 py-2.5 text-sm font-semibold">الأسطر المستوردة {draft && b.rows.length > 0 && <span className="ms-2 text-xs font-normal text-gray-500">احذف أو صحّح الأسطر الخاطئة في الملف ثم أعد الرفع — الاعتماد ممنوع مع أي خطأ</span>}</div>
         <div className="overflow-x-auto">
           <table className="tbl">
-            <thead><tr><th>#</th><th>رمز النظام السابق</th><th>الاسم</th><th>الفئة</th><th>الموقع</th><th>مركز الكلفة</th><th>بدء الإهلاك</th><th className="!text-end">التكلفة</th><th className="!text-end">التخريدية</th><th className="!text-end">المجمّع</th><th className="!text-end">العمر</th><th className="!text-end">المتبقي</th><th>المعاينة</th>{editable && <th />}</tr></thead>
+            <thead><tr><th>#</th><th>رمز النظام السابق</th><th>الاسم</th><th>الفئة</th><th>الموقع</th><th>مركز الكلفة</th><th>بدء الاندثار</th><th className="!text-end">التكلفة</th><th className="!text-end">التخريدية</th><th className="!text-end">المجمّع</th><th className="!text-end">العمر</th><th className="!text-end">المتبقي</th><th>المعاينة</th>{editable && <th />}</tr></thead>
             <tbody>
               {b.rows.map((r, i) => {
                 const c = checks[i]
@@ -168,8 +168,8 @@ export function BatchForm() {
         </Card>
       )}
 
-      {ask === 'commit' && <Confirm title="اعتماد الدفعة" text={`ينشئ ${b.rows.length} أصلاً قديماً بتاريخ قطع ${b.cutoffDate}، بإهلاك مستورد وعمر متبقٍّ، وحركة «رصيد افتتاحي» برقم الدفعة. هل تريد المتابعة؟`} onClose={() => setAsk(null)} onYes={() => persist('commit')} />}
-      {ask === 'reverse' && <Confirm danger title="عكس الدفعة" text="تُلغى أصول الدفعة وتُعكس أرصدتها. ممنوع بعد ترحيل أي قسط إهلاك لأصل في الدفعة." onClose={() => setAsk(null)} onYes={() => run((d) => reverseBatch(d, b.id), 'تم عكس الدفعة')} />}
+      {ask === 'commit' && <Confirm title="اعتماد الدفعة" text={`ينشئ ${b.rows.length} أصلاً قديماً بتاريخ قطع ${b.cutoffDate}، باندثار مستورد وعمر متبقٍّ، وحركة «رصيد افتتاحي» برقم الدفعة. هل تريد المتابعة؟`} onClose={() => setAsk(null)} onYes={() => persist('commit')} />}
+      {ask === 'reverse' && <Confirm danger title="عكس الدفعة" text="تُلغى أصول الدفعة وتُعكس أرصدتها. ممنوع بعد ترحيل أي قسط اندثار لأصل في الدفعة." onClose={() => setAsk(null)} onYes={() => run((d) => reverseBatch(d, b.id), 'تم عكس الدفعة')} />}
       {ask === 'delete' && <Confirm danger title="حذف المسودة" text="حذف مسودة الدفعة لا يؤثر على الأصول." onClose={() => setAsk(null)}
         onYes={() => { if (run((d) => { d.batches = d.batches.filter((x) => x.id !== b.id) }, 'تم حذف المسودة')) nav('/opening-balances') }} />}
       <p className="mt-2 text-xs text-gray-400" dir="ltr">{TODAY}</p>

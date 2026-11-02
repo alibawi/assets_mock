@@ -22,11 +22,11 @@ const accounts: Account[] = [
   { code: '1190000002', name: 'مجمّع اندثار آلات ومعدات', postable: true },
   { code: '1190000003', name: 'مجمّع اندثار وسائط نقل', postable: true },
   { code: '1190000004', name: 'مجمّع اندثار أثاث وأجهزة مكتب', postable: true },
-  { code: '1191000000', name: 'مجمّع الإهلاك غير المخطط', postable: false },
-  { code: '1191000001', name: 'مجمّع إهلاك غير مخطط — مباني (مقترح)', postable: true },
-  { code: '1191000002', name: 'مجمّع إهلاك غير مخطط — آلات ومعدات (مقترح)', postable: true },
-  { code: '1191000003', name: 'مجمّع إهلاك غير مخطط — وسائط نقل (مقترح)', postable: true },
-  { code: '1191000004', name: 'مجمّع إهلاك غير مخطط — أثاث وأجهزة مكتب (مقترح)', postable: true },
+  { code: '1191000000', name: 'مجمّع الاندثار غير المخطط', postable: false },
+  { code: '1191000001', name: 'مجمّع اندثار غير مخطط — مباني (مقترح)', postable: true },
+  { code: '1191000002', name: 'مجمّع اندثار غير مخطط — آلات ومعدات (مقترح)', postable: true },
+  { code: '1191000003', name: 'مجمّع اندثار غير مخطط — وسائط نقل (مقترح)', postable: true },
+  { code: '1191000004', name: 'مجمّع اندثار غير مخطط — أثاث وأجهزة مكتب (مقترح)', postable: true },
   { code: '1191000005', name: 'مجمّع إطفاء غير مخطط — غير ملموسة (مقترح)', postable: true },
   { code: '1195000001', name: 'مجمّع إطفاء موجودات غير ملموسة (مقترح)', postable: true },
   { code: '1200000001', name: 'النقد / المدينون (مقترح)', postable: true },
@@ -42,7 +42,7 @@ const accounts: Account[] = [
   { code: '3700000004', name: 'اندثار أثاث وأجهزة مكاتب', postable: true },
   { code: '3700000005', name: 'إطفاء نفقات إيرادية مؤجلة', postable: true },
   { code: '3700000006', name: 'إطفاء موجودات غير ملموسة (مقترح)', postable: true },
-  { code: '3710000001', name: 'مصروف إهلاك غير مخطط (يدوي) (مقترح)', postable: true },
+  { code: '3710000001', name: 'مصروف اندثار غير مخطط (يدوي) (مقترح)', postable: true },
   { code: '3800000001', name: 'خسائر بيع واستبعاد موجودات ثابتة (مقترح)', postable: true },
   { code: '3800000002', name: 'خسائر هبوط قيمة الموجودات الثابتة (مقترح)', postable: true },
   { code: '4100000001', name: 'إيرادات المبيعات (مقترح)', postable: true },
@@ -285,7 +285,7 @@ export function seed(): DB {
     db.assets.filter((a) => !a.isLegacy && a.state === 'draft' && a.acquisitionDate.slice(0, 7) === ym && a.acquisitionDate <= '2026-09-30')
       .forEach((a) => capitalize(db, a.id, a.acquisitionDate))
     before[m]?.forEach((f) => f(db))
-    const r = createRun(db, ym, '', `دورة إهلاك شهر ${m}/2026`)
+    const r = createRun(db, ym, '', `دورة اندثار شهر ${m}/2026`)
     if (typeof r !== 'string') postRun(db, r.id, monthEnd(ym))
     after[m]?.forEach((f) => f(db))
   }
